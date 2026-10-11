@@ -1,0 +1,1666 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>飞 Fly · PV 02 · rev</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=ZCOOL+KuaiLe&display=block">
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#0b0b0d}
+#pv{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;background:#F2ECDF}
+#hud{position:fixed;left:12px;bottom:10px;font:12px/1.6 Inter,"Noto Sans SC",sans-serif;color:#cfcac0;background:rgba(11,11,13,.72);padding:6px 10px;border-radius:2px;letter-spacing:.04em;pointer-events:none;white-space:pre}
+#hud[hidden]{display:none}
+</style></head><body>
+<canvas id="pv" width="1920" height="1080"></canvas>
+<div id="hud">载入中…</div>
+<script>
+/* ============================================================================================
+   《飞 Fly》PV 02 · 文字版（修订）— 47 秒，1920×1080
+   ▸ 画面只由一个时间变量 t（秒）决定：render(t)。无 setTimeout / CSS 动画 / 未播种随机数。
+   ▸ window.pv = { duration, seek(t), play(), pause(), ready }；?t=12.5 打开即停在该秒；&hud=0 隐藏提示。
+   ▸ 打开后按空格开始；结尾停在定版，不循环。
+   键：空格 播放/暂停 · ← → 逐帧(1/60s，Shift = 1s) · 0 回到开头 · M 静音 · W 导出音轨 .wav · H 提示
+   结构：0 封签(AI 声明) · 4 开端 · 12 起飞 · 22 梦/十一月 · 26 高潮 · 35 闪白 · 35.3「1」+ 呼气 · 37.4 后来 · 40.2 定版
+   摄像机：CAMK 表（时间, 中心x, 中心y, 缩放, 旋转, 曲线）；E0 = cubic-bezier(0,0,0,1)。高潮每一切的镜头在 CUTCAM。
+   ============================================================================================ */
+'use strict';
+/* ★ 文案 ★ —— 除 TAGLINE 外都是游戏原句 */
+const AI_LINE='本作由 AI 辅助制作（约 60%）· 故事与文本由作者完成';
+const AI_SUB='详细占比见附图 · Detailed breakdown attached';
+const TAGLINE='你还记得飞起来是什么感觉吗。';   // ← 宣传语（PV 作者写的，可替换）
+const DUR=47;
+
+const G={idx:0};
+let toothC=null,cpat=null;
+const ccan=document.createElement('canvas');ccan.width=1920;ccan.height=1080;const cctx=ccan.getContext('2d');
+const mcan=document.createElement('canvas');mcan.width=960;mcan.height=540;const mctx=mcan.getContext('2d');
+
+/* ======================= LIB: verbatim from index_v8.html ======================= */
+/* — index_v8.html L606–610 — */
+const W=1920,H=1080;
+const COL=i=>120+(i-1)*142, COLR=i=>COL(i)+118;
+const COBALT='#0047AB',PAPER='#F2ECDF',SUN='#F2B51F',SUN_D='#C88A0B';
+const HAND='"ZCOOL KuaiLe","Noto Sans SC",sans-serif';
+const $=s=>document.querySelector(s);
+/* — index_v8.html L612–627 — */
+const clamp=(x,a=0,b=1)=>x<a?a:x>b?b:x;
+const seg=(t,a,b)=>clamp((t-a)/(b-a));
+const lerp=(a,b,u)=>a+(b-a)*u;
+const eOut=x=>1-Math.pow(1-x,3), eIn=x=>x*x*x, eIO=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2, eSine=x=>-(Math.cos(Math.PI*x)-1)/2;
+/* yield to the event loop without timer clamping (background tabs throttle setTimeout chains hard) */
+const mch=new MessageChannel(),mq=[];mch.port1.onmessage=()=>{const r=mq.shift();if(r)r()};
+const nf=()=>new Promise(r=>{mq.push(r);mch.port2.postMessage(0)});
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ---------- seeded randomness ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+let R=mulberry32(1);
+const seed=s=>{R=mulberry32(s)};
+const rnd=(a=0,b=1)=>a+(b-a)*R();
+function gauss(r=R){let u=0,v=0;while(!u)u=r();while(!v)v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(6.283185*v)}
+function hh(a){a|=0;a=Math.imul(a^a>>>16,0x45d9f3b);a=Math.imul(a^a>>>16,0x45d9f3b);return((a^a>>>16)>>>0)/4294967296}
+/* — index_v8.html L629–1508 — */
+/* ---------- watercolour ---------- */
+function deform(p,iters,amt){
+  for(let k=0;k<iters;k++){
+    const q=[];
+    for(let i=0;i<p.length;i++){
+      const a=p[i],b=p[(i+1)%p.length];
+      q.push(a);
+      const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1,v=(a.v+b.v)/2;
+      const m=gauss()*len*amt*v, ang=Math.atan2(dy,dx)+Math.PI/2+gauss()*.35;
+      q.push({x:(a.x+b.x)/2+Math.cos(ang)*m,y:(a.y+b.y)/2+Math.sin(ang)*m,v:v*rnd(.75,1.15)});
+    }
+    p=q;
+  }
+  return p;
+}
+function fillPoly(ctx,p){ctx.beginPath();ctx.moveTo(p[0].x,p[0].y);for(let i=1;i<p.length;i++)ctx.lineTo(p[i].x,p[i].y);ctx.closePath();ctx.fill()}
+function wash(ctx,base,color,o={}){
+  const {layers=30,alpha=.04,bi=2,li=3,amt=.45}=o;
+  const b=deform(base,bi,amt);
+  ctx.fillStyle=color;
+  for(let l=0;l<layers;l++){ctx.globalAlpha=alpha*rnd(.7,1.3);fillPoly(ctx,deform(b,li,amt))}
+  ctx.globalAlpha=1;
+}
+function ellipsePoly(cx,cy,rx,ry,n=14,v=1){const p=[];for(let i=0;i<n;i++){const a=i/n*6.2832;p.push({x:cx+Math.cos(a)*rx*rnd(.88,1.08),y:cy+Math.sin(a)*ry*rnd(.88,1.08),v:v*rnd(.6,1.3)})}return p}
+function bandPoly(y0,y1,n=10,v=1){const p=[],x0=-320,x1=2240;for(let i=0;i<=n;i++)p.push({x:x0+(x1-x0)*i/n,y:y0,v:v*rnd(.5,1.4)});for(let i=n;i>=0;i--)p.push({x:x0+(x1-x0)*i/n,y:y1,v:v*rnd(.5,1.4)});return p}
+function granulate(x,w,h){
+  const id=x.getImageData(0,0,w,h),d=id.data,r=mulberry32(99);
+  for(let i=0;i<d.length;i+=4){
+    const pig=clamp(1-(d[i]+d[i+1]+d[i+2])/701);
+    const n=r(), f=1-n*n*.24*Math.min(1,pig*4);
+    d[i]*=f;d[i+1]*=f;d[i+2]*=f;
+  }
+  x.putImageData(id,0,0);
+}
+async function paintSky(onp){
+  const c=document.createElement('canvas');c.width=960;c.height=1080;
+  const x=c.getContext('2d');
+  x.fillStyle=PAPER;x.fillRect(0,0,960,1080);
+  x.scale(.5,.5);x.globalCompositeOperation='multiply';
+  seed(11);
+  const steps=[
+    ()=>wash(x,bandPoly(-320,760,10,.7),'#C4DAF4',{layers:22,alpha:.032}),
+    ()=>wash(x,bandPoly(-320,300,10,.7),'#B9D2F2',{layers:16,alpha:.026}),
+    ()=>wash(x,bandPoly(700,1280,10,.6),'#F3E9EC',{layers:18,alpha:.024}),
+    ()=>wash(x,bandPoly(1060,1740,10,.7),'#FCE7D6',{layers:22,alpha:.03}),
+    ()=>wash(x,bandPoly(1460,1900,10,.6),'#F9D8C6',{layers:20,alpha:.024}),
+    ()=>wash(x,ellipsePoly(1480,1840,330,240,16),'#FAE0BE',{layers:22,alpha:.022}),
+    ()=>wash(x,ellipsePoly(1480,1846,124,118,14,.5),'#F4BC86',{layers:34,alpha:.045,amt:.3}),
+    ()=>wash(x,bandPoly(1884,2420,14,.3),'#D2D9C3',{layers:28,alpha:.04,amt:.25}),
+    ()=>wash(x,bandPoly(1975,2420,14,.4),'#BFCAB8',{layers:22,alpha:.03,amt:.3}),
+  ];
+  for(let i=0;i<steps.length;i++){steps[i]();onp((i+1)/(steps.length+1));await nf()}
+  /* a band of real night above the title sky: the edge of the earth-moon system */
+  wash(x,bandPoly(-320,150,10,.6),'#8FA5CF',{layers:14,alpha:.03});
+  x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';
+  granulate(x,960,1080);onp(1);
+  return c;
+}
+const PAD=110;
+function paintCloud(w,h,s){
+  seed(s);
+  const c=document.createElement('canvas');c.width=Math.ceil((w+PAD*2)/2);c.height=Math.ceil((h+PAD*2)/2);
+  const x=c.getContext('2d');x.scale(.5,.5);x.translate(PAD,PAD);
+  const n=4+(R()*3|0);
+  for(let i=0;i<n;i++){
+    const u=i/(n-1),cx=w*(.2+.6*u)+rnd(-20,20),cy=h*(.6-Math.sin(u*Math.PI)*.18)+rnd(-10,10);
+    wash(x,ellipsePoly(cx,cy,w*rnd(.13,.2),h*rnd(.24,.34),12,.8),'#FBF8F0',{layers:20,alpha:.075,amt:.35});
+  }
+  x.globalCompositeOperation='multiply';
+  wash(x,ellipsePoly(w*.5,h*.78,w*.36,h*.12,12,.6),'#CFC4DA',{layers:18,alpha:.05,amt:.3});
+  return c;
+}
+
+/* ---------- crayon ---------- */
+function makeTooth(){
+  const S=256,c=document.createElement('canvas');c.width=c.height=S;
+  const x=c.getContext('2d'),id=x.createImageData(S,S),d=id.data,r=mulberry32(5);
+  const grid=P=>{const g=new Float32Array(P*P);for(let i=0;i<g.length;i++)g[i]=r();return g};
+  const vn=(g,P,X,Y)=>{const fx=X/S*P,fy=Y/S*P,ix=Math.floor(fx),iy=Math.floor(fy),tx=fx-ix,ty=fy-iy,sx=tx*tx*(3-2*tx),sy=ty*ty*(3-2*ty);
+    const i0=ix%P,i1=(ix+1)%P,j0=iy%P,j1=(iy+1)%P,a=g[j0*P+i0],b=g[j0*P+i1],c2=g[j1*P+i0],e=g[j1*P+i1];
+    return a+(b-a)*sx+(c2-a)*sy+(a-b-c2+e)*sx*sy};
+  const g1=grid(128),g2=grid(64),g3=grid(16);
+  for(let Y=0;Y<S;Y++)for(let X=0;X<S;X++){
+    const v=.5*vn(g1,128,X,Y)+.32*vn(g2,64,X,Y)+.18*vn(g3,16,X,Y);
+    d[(Y*S+X)*4+3]=clamp((v-.28)/.3)*255;
+  }
+  x.putImageData(id,0,0);return c;
+}
+function applyTooth(ctx,pat,ox,oy){
+  ctx.save();ctx.globalCompositeOperation='destination-in';ctx.globalAlpha=1;
+  pat.setTransform(new DOMMatrix([1,0,0,1,ox,oy]));ctx.fillStyle=pat;ctx.fillRect(0,0,W,H);ctx.restore();
+}
+function crayon(ctx,pts,color,w,r,ox,oy,n=pts.length,salt=0,am=1){
+  if(n<2)return;
+  ctx.strokeStyle=color;ctx.lineCap='round';ctx.lineJoin='round';
+  const ph=r()*6.283,amp=.6+r()*.5;
+  for(let p=0;p<3;p++){
+    ctx.globalAlpha=(.42+.38*r())*am;
+    ctx.lineWidth=w*(.55+.5*r());
+    const jx=gauss(r)*w*.16,jy=gauss(r)*w*.16,k=(salt+p*7919)|0;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const q=pts[i];
+      const x=q.x+ox+jx+Math.sin(i*.19+ph)*amp+(hh(i*3+k)-.5)*.9;
+      const y=q.y+oy+jy+Math.cos(i*.23+ph)*amp+(hh(i*3+1+k)-.5)*.9;
+      if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+function crayonText(ctx,it,r,ox,oy){
+  ctx.fillStyle=it.color;ctx.font=`${it.size}px ${HAND}`;ctx.textBaseline='alphabetic';
+  for(const ch of it.chars){
+    ctx.save();ctx.translate(ch.x+ox,ch.y+oy);ctx.rotate(ch.rot+gauss(r)*.012);ctx.scale(ch.s,ch.s);
+    for(let p=0;p<3;p++){ctx.globalAlpha=.45+.35*r();ctx.fillText(ch.c,gauss(r)*1.2,gauss(r)*1.2)}
+    ctx.restore();
+  }
+  ctx.globalAlpha=1;
+}
+function pathPoly(ctx,p,ox,oy){ctx.beginPath();p.forEach((q,i)=>i?ctx.lineTo(q.x+ox,q.y+oy):ctx.moveTo(q.x+ox,q.y+oy));ctx.closePath()}
+
+/* kid geometry */
+function kline(x1,y1,x2,y2,wob=2.5){
+  const len=Math.hypot(x2-x1,y2-y1)||1,n=Math.max(3,Math.round(len/8)),nx=-(y2-y1)/len,ny=(x2-x1)/len;
+  const bow=gauss()*wob*1.2,ph=rnd(0,6.28),fr=rnd(.8,2.2),os=rnd(1,7),oe=rnd(2,9),pts=[];
+  for(let i=0;i<=n;i++){const u=i/n,s=(-os+u*(len+os+oe))/len,off=Math.sin(u*Math.PI)*bow+Math.sin(ph+u*fr*6.283)*wob*.35;
+    pts.push({x:x1+(x2-x1)*s+nx*off,y:y1+(y2-y1)*s+ny*off})}
+  return pts;
+}
+function kcircle(cx,cy,r,turns=1.2){const n=Math.round(r*turns*.7)+16,a0=rnd(0,6.28),pts=[];
+  for(let i=0;i<=n;i++){const u=i/n,a=a0+u*turns*6.283,rr=r*(1+.06*Math.sin(u*9+a0))+(u-.5)*r*.1;pts.push({x:cx+Math.cos(a)*rr,y:cy+Math.sin(a)*rr*.95})}return pts}
+function zig(poly,angle,sp,over=6){
+  const ca=Math.cos(angle),sa=Math.sin(angle),rot=poly.map(p=>({u:p.x*ca+p.y*sa,v:-p.x*sa+p.y*ca}));
+  let u0=1e9,u1=-1e9,v0=1e9,v1=-1e9;rot.forEach(q=>{u0=Math.min(u0,q.u);u1=Math.max(u1,q.u);v0=Math.min(v0,q.v);v1=Math.max(v1,q.v)});
+  const pts=[];let dir=1;
+  for(let v=v0-sp*.5;v<=v1+sp*.5;v+=sp*rnd(.8,1.2)){
+    const a=dir>0?u0-over:u1+over,b=dir>0?u1+over:u0-over;
+    pts.push({u:a+gauss()*3,v:v+gauss()*1.2});pts.push({u:b+gauss()*3,v:v+sp*.5+gauss()*1.2});dir*=-1;
+  }
+  return densify(pts.map(q=>({x:q.u*ca-q.v*sa,y:q.u*sa+q.v*ca})),7);
+}
+function densify(pts,step=6,closed=false){const P=closed?[...pts,pts[0]]:pts,out=[];
+  for(let i=0;i<P.length-1;i++){const a=P[i],b=P[i+1],n=Math.max(1,Math.round(Math.hypot(b.x-a.x,b.y-a.y)/step));for(let j=0;j<n;j++)out.push({x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n})}
+  out.push(P[P.length-1]);return out}
+function kstar(cx,cy,r){const v=[];for(let i=0;i<=5;i++){const a=-Math.PI/2+i*4*Math.PI/5+rnd(-.05,.05);v.push({x:cx+Math.cos(a)*r*rnd(.9,1.1),y:cy+Math.sin(a)*r*rnd(.9,1.1)})}return densify(v,4)}
+function bird(x,y,s){const pts=[];for(let i=0;i<=22;i++){const u=i/22;pts.push({x:x-s+u*2*s,y:y-Math.abs(Math.sin(u*Math.PI*2))*s*.42})}return pts}
+function catmull(P,sg=20){const out=[];for(let i=0;i<P.length-1;i++){const p0=P[Math.max(0,i-1)],p1=P[i],p2=P[i+1],p3=P[Math.min(P.length-1,i+2)];
+  for(let j=0;j<sg;j++){const t=j/sg,t2=t*t,t3=t2*t;out.push({x:.5*(2*p1.x+(-p0.x+p2.x)*t+(2*p0.x-5*p1.x+4*p2.x-p3.x)*t2+(-p0.x+3*p1.x-3*p2.x+p3.x)*t3),y:.5*(2*p1.y+(-p0.y+p2.y)*t+(2*p0.y-5*p1.y+4*p2.y-p3.y)*t2+(-p0.y+3*p1.y-3*p2.y+p3.y)*t3)})}}
+  out.push(P[P.length-1]);return out}
+function resample(P,step){const out=[{...P[0]}];let prev=P[0],need=step;
+  for(let i=1;i<P.length;i++){let a=prev,b=P[i],d=Math.hypot(b.x-a.x,b.y-a.y);
+    while(d>=need){const u=need/d,q={x:a.x+(b.x-a.x)*u,y:a.y+(b.y-a.y)*u};out.push(q);a=q;d=Math.hypot(b.x-a.x,b.y-a.y);need=step}
+    need-=d;prev=b}
+  return out}
+
+let IID=1;
+const bbOf=pts=>{let a=1e9,b=1e9,c=-1e9,d=-1e9;for(const p of pts){if(p.x<a)a=p.x;if(p.y<b)b=p.y;if(p.x>c)c=p.x;if(p.y>d)d=p.y}return{x0:a,y0:b,x1:c,y1:d}};
+const S=(list,pts,color,w,extra)=>list.push(Object.assign({id:IID++,k:'s',pts,color,w,bb:bbOf(pts)},extra));
+const F=(list,clip,ang,sp,color,w)=>list.push({id:IID++,k:'f',clip,pts:zig(clip,ang,sp),color,w,bb:bbOf(clip)});
+function handText(list,str,x0,y0,size,color){const chars=[];let x=x0;for(const c of str){const s=rnd(.9,1.12);chars.push({c,x,y:y0+gauss()*4,rot:gauss()*.08,s});x+=size*s*rnd(.9,1)}
+  list.push({id:IID++,k:'t',chars,size,color,bb:{x0:x0-30,y0:y0-size*1.3,x1:x+30,y1:y0+size*.4}})}
+
+function buildDreamItems(){
+  const L=[];seed(31);
+  /* yellow belongs to him alone: the window glows apricot, the sun is a child's red-orange, stars are white crayon */
+  const blue='#36539A',red='#B4553E',yel='#F2A766',amber='#DE6440',grn='#5F8050',brn='#7B5B3F',gray='#4E4D58',ink='#38435F',star='#FFFBF0';
+  /* horizon + grass */
+  S(L,kline(-30,1892,980,1886,3),grn,6);S(L,kline(940,1888,1960,1894,3),grn,6);
+  for(let x=-10;x<1940;x+=rnd(28,64)){const h=rnd(10,24);S(L,[{x,y:1893},{x:x+4,y:1893-h},{x:x+9,y:1893},{x:x+13,y:1893-h*.8},{x:x+18,y:1893}].map(p=>({x:p.x+gauss(),y:p.y+gauss()})),grn,4)}
+  /* house */
+  const roof=[{x:228,y:1706},{x:405,y:1584},{x:582,y:1706}];
+  F(L,roof,-.5,9,red,5);
+  S(L,kline(228,1706,405,1584),red,7);S(L,kline(405,1584,582,1706),red,7);S(L,kline(222,1708,588,1704),red,6);
+  S(L,kline(478,1634,478,1598),red,6);S(L,kline(478,1598,512,1598),red,6);S(L,kline(512,1598,512,1658),red,6);
+  S(L,kline(252,1708,250,1892),blue,6);S(L,kline(558,1708,560,1892),blue,6);
+  const win=[{x:296,y:1736},{x:386,y:1736},{x:386,y:1806},{x:296,y:1806}];
+  F(L,win,.7,7,yel,6);F(L,win,-.9,15,amber,4);
+  S(L,kline(296,1736,386,1736,1.5),blue,5);S(L,kline(386,1736,386,1806,1.5),blue,5);S(L,kline(386,1806,296,1806,1.5),blue,5);S(L,kline(296,1806,296,1736,1.5),blue,5);
+  S(L,kline(341,1738,341,1804,1),blue,4);S(L,kline(298,1771,384,1771,1),blue,4);
+  S(L,kline(450,1892,450,1792),blue,5);S(L,kline(450,1792,520,1792),blue,5);S(L,kline(520,1792,520,1892),blue,5);
+  /* tree */
+  S(L,kline(690,1892,694,1770),brn,6);S(L,kline(714,1892,710,1770),brn,6);
+  F(L,ellipsePoly(702,1716,66,60,12,0),.4,10,grn,6);S(L,kcircle(702,1716,70,1.6),grn,6);
+  /* setting sun */
+  const arc=[];for(let i=0;i<=44;i++){const a=Math.PI+i/44*Math.PI*1.04-.02;arc.push({x:1480+Math.cos(a)*122,y:1888+Math.sin(a)*118})}
+  S(L,arc,amber,7);
+  for(let k=0;k<9;k++){const a=Math.PI*(1.08+k*.105);S(L,kline(1480+Math.cos(a)*150,1888+Math.sin(a)*146,1480+Math.cos(a)*205,1888+Math.sin(a)*200,1.5),amber,5)}
+  /* birds over the sunset */
+  S(L,bird(1060,1520,22),gray,4);S(L,bird(1118,1494,15),gray,4);S(L,bird(1012,1470,11),gray,3);
+  /* handwriting on the drawing */
+  handText(L,'我梦见我会飞。',170,1474,74,ink);
+  /* upper sky: stars + a drifting pair of birds */
+  [[628,190,13],[612,600,9],[1080,420,15],[1250,700,9],[960,840,8]].forEach(([x,y,r])=>S(L,kstar(x,y,r),star,4));
+  S(L,bird(-200,520,18),gray,4,{vx:14});S(L,bird(-150,498,12),gray,3,{vx:14});
+  /* more of his drawing (its own seed, so the strokes above keep their shape) */
+  seed(32);
+  /* 「比学校的旗杆还高」: the school flagpole, and himself above it, arms out */
+  S(L,kline(900,1892,902,1556,1.5),gray,5);S(L,kcircle(902,1548,7,1.2),gray,4);
+  const flag=[{x:904,y:1562,v:.1},{x:986,y:1584,v:.1},{x:904,y:1608,v:.1}];F(L,flag,.4,7,red,5);S(L,densify(flag,5,true),red,5);
+  const me=SUN_D,fx=868,fy=1150,m0=L.length; // himself: not there at first — the trail wipes him in as it loops round him (ME, drawDream)
+  S(L,kcircle(fx,fy,20,1.25),me,5);S(L,[{x:fx-15,y:fy-12},{x:fx-12,y:fy-36},{x:fx-3,y:fy-18}],me,4);S(L,[{x:fx+15,y:fy-12},{x:fx+12,y:fy-36},{x:fx+3,y:fy-18}],me,4);
+  S(L,kline(fx+2,fy+20,fx+8,fy+82,1),me,5);S(L,kline(fx-58,fy+28,fx+70,fy+40,1.5),me,5);
+  S(L,kline(fx+8,fy+82,fx-14,fy+122,1),me,5);S(L,kline(fx+8,fy+82,fx+34,fy+118,1),me,5);
+  S(L,kline(fx+30,fy+2,fx+44,fy+-6,.5),me,3);S(L,kline(fx+44,fy-6,fx+60,fy-2,.5),me,3); // a tail, because he has one
+  for(let i=m0;i<L.length;i++)L[i].me=true;
+  /* up where the sky goes dark: a moon ring round where the paper moon will sit, coloured rocks, more stars */
+  S(L,kcircle(1150,560,104,1.15),'#FBF3D6',5);
+  [[1112,520,12],[1180,590,9],[1130,610,7]].forEach(([x,y,r])=>S(L,kcircle(x,y,r,1.1),'#E9DFC4',3));
+  [['#7FD1C7',1180,236,14],['#E79AC1',1330,310,10],['#9C8FE0',890,610,12],['#F08C6B',1060,780,9],['#7FD1C7',1320,690,11],['#E79AC1',780,800,8],['#9C8FE0',1390,200,9]]
+    .forEach(([c,x,y,r])=>{const p=ellipsePoly(x,y,r,r*.8,9,.5);F(L,p,.6,5,c,5);S(L,densify(p,4,true),'#F5F2EA',3)});
+  [[1240,180,12],[1390,420,9],[1000,520,8],[1290,620,10],[1000,950,9],[1160,162,7]].forEach(([x,y,r])=>S(L,kstar(x,y,r),star,4));
+  for(let i=0;i<40;i++){const x=rnd(720,1420),y=rnd(80,1000);S(L,[{x,y},{x:x+1.5,y:y+1}],star,3)}
+  handText(L,'月亮',1010,744,40,ink);L[L.length-1].late=true; // written in only once the title has set (MOON_WORD)
+  return L;
+}
+function buildTrail(){
+  seed(55);
+  const P=[[470,1612],[560,1500],[700,1392],[830,1322],[905,1226],[862,1142],[768,1160],[748,1262],[836,1312],[985,1250],[960,1070],[860,870],[770,650],[720,420],[722,190],[752,-80]].map(([x,y])=>({x,y}));
+  return resample(catmull(P,24),5).map((p,i)=>({x:p.x+Math.sin(i*.07)*2,y:p.y+Math.cos(i*.05)*2}));
+}
+/* ---------- game backgrounds: same paper, same crayons ---------- */
+const rectP=(x0,y0,x1,y1,v=.15)=>[{x:x0,y:y0,v},{x:x1,y:y0,v},{x:x1,y:y1,v},{x:x0,y:y1,v}];
+const polyP=(a,v=.15)=>a.map(([x,y])=>({x,y,v}));
+const arcP=(cx,cy,rx,ry,a0,a1,n=24)=>Array.from({length:n+1},(_,i)=>{const a=a0+(a1-a0)*i/n;return{x:cx+Math.cos(a)*rx,y:cy+Math.sin(a)*ry}});
+function box(L,x0,y0,x1,y1,c,w=5){S(L,kline(x0,y0,x1,y0,1.5),c,w);S(L,kline(x1,y0,x1,y1,1.5),c,w);S(L,kline(x1,y1,x0,y1,1.5),c,w);S(L,kline(x0,y1,x0,y0,1.5),c,w)}
+async function paintBase(washes,ph=540){
+  const c=document.createElement('canvas');c.width=960;c.height=ph;const x=c.getContext('2d');
+  x.fillStyle=PAPER;x.fillRect(0,0,960,ph);x.scale(.5,.5);x.globalCompositeOperation='multiply';
+  for(const [poly,col,o] of washes){wash(x,poly,col,o);await nf()}
+  x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';granulate(x,960,ph);return c;
+}
+/* the glider, as a child draws it: pale yellow wing, his yellow body, black struts, a propeller that boils into a spin, and his head in the cockpit */
+function buildGlider(){
+  seed(808);const L=[],ink='#2F3036';
+  const wing=polyP([[-232,-16],[232,-24],[234,-8],[-230,0]],.05);F(L,wing,.1,11,'#F7D66E',6);S(L,densify(wing,6,true),ink,4);
+  const body=polyP([[-92,6],[40,-12],[98,4],[44,22],[-82,18]],.05);F(L,body,.25,8,SUN,7);S(L,densify(body,6,true),ink,5);
+  S(L,kline(-86,8,-116,-36,1),ink,5);S(L,kline(-116,-36,-76,-30,1),ink,4);
+  S(L,kline(-60,-6,-30,12,1),ink,4);S(L,kline(70,-14,40,10,1),ink,4);
+  S(L,kcircle(14,-24,15,1.3),SUN,5);
+  {const cap=[];for(let q=0;q<=10;q++){const a=Math.PI*1.05+q/10*Math.PI*.95;cap.push({x:14+Math.cos(a)*17,y:-24+Math.sin(a)*16,v:.05})}F(L,cap,.9,4,CAP,5);S(L,densify(cap,4,true),CAP_D,3); // his cap, side on
+    S(L,kcircle(28,-29,5,1.2),'#3A3A44',3);S(L,densify([{x:4,y:-18},{x:-10,y:-12},{x:-24,y:-16}],4),CAP_D,4)} // goggles; the strap blown back
+  S(L,kline(4,-36,0,-52,1),SUN,4);S(L,kline(22,-36,28,-52,1),SUN,4);
+  S(L,kline(104,-16,104,24,1),ink,4);S(L,kline(90,4,118,4,1),ink,4);
+  return L;
+}
+/* chapter 2's sky, four screens tall: the July slope → summer blue → cloud → deeper than any blue → violet → the black, the stars and the moon */
+async function buildAscent(){
+  seed(309);const L=[],gray='#4E4D58',ink='#2F3036',grn='#5F8050',blue='#36539A',red='#B4553E';
+  const base=await paintBase([
+    [bandPoly(2350,3900,10,.6),'#C9DDF3',{layers:22,alpha:.04}],   // runs on under the slope, so no paper gap shows at the horizon
+    [bandPoly(1640,2520,10,.6),'#8FB4E6',{layers:24,alpha:.05}],
+    [bandPoly(1000,1820,10,.5),'#3F69C8',{layers:28,alpha:.07}],
+    [bandPoly(560,1260,10,.5),'#5A4C9C',{layers:26,alpha:.07}],
+    [bandPoly(-320,780,10,.4),'#1B2140',{layers:30,alpha:.1}],
+    [bandPoly(-320,420,10,.4),'#0F1224',{layers:20,alpha:.1}],
+    [ellipsePoly(980,2960,520,150,16,.4),'#A8C98E',{layers:20,alpha:.05,amt:.25}],
+    [polyP([[-320,4400],[-320,4040],[1940,3820],[2240,3820],[2240,4400]],.25),'#B3CF94',{layers:24,alpha:.05,amt:.25}],
+    [polyP([[-320,4400],[-320,4140],[1940,3930],[2240,3930],[2240,4400]],.25),'#97B87C',{layers:16,alpha:.04,amt:.25}],
+  ],2160);
+  const x=base.getContext('2d');x.save();x.scale(.5,.5);
+  wash(x,ellipsePoly(1440,300,118,116,18,.15),'#F2EFE6',{layers:14,alpha:.3,amt:.06});         // the white, wet moon
+  x.globalCompositeOperation='multiply';wash(x,ellipsePoly(1462,290,104,106,16,.2),'#C9D0E0',{layers:8,alpha:.06,amt:.08});
+  x.globalCompositeOperation='source-over';
+  [['#7FD1C7',260,520],['#E79AC1',620,640],['#9C8FE0',980,470],['#F08C6B',1260,700],['#7FD1C7',1620,560],['#E79AC1',1820,760],['#9C8FE0',420,820],['#F08C6B',1540,880]]
+    .forEach(([c,ax,ay])=>wash(x,ellipsePoly(ax,ay,rnd(12,26),rnd(10,20),10,.5),c,{layers:10,alpha:.18,amt:.3}));  // asteroids hung with colour
+  x.restore();
+  for(let i=0;i<170;i++){const sx=rnd(0,1920),sy=Math.pow(R(),1.5)*1050,s=rnd(2,8);S(L,[{x:sx-s,y:sy},{x:sx+s,y:sy}],'#FFFDF4',s>5?4:3);if(s>5)S(L,[{x:sx,y:sy-s},{x:sx,y:sy+s}],'#FFFDF4',3)}
+  for(let i=0;i<240;i++){const u=R(),sx=-100+u*2100+gauss()*50,sy=820-u*940+gauss()*55;S(L,[{x:sx,y:sy},{x:sx+1.5,y:sy+1}],'#FFFDF4',2)} // a river of stars
+  for(let i=0;i<9;i++)S(L,bird(rnd(80,1840),rnd(2700,3250),rnd(10,20)),gray,3);
+  S(L,resample(catmull([[560,2900],[740,2990],[920,2930],[1100,3020],[1300,2950],[1440,3000]].map(([a,b])=>({x:a,y:b})),10),6),'#5C86C8',3); // the river, a blue thread on green felt
+  S(L,kline(-20,4042,1940,3822,3),grn,6);
+  for(let gx=0;gx<1930;gx+=rnd(30,64)){const gy=4040-(gx+320)*220/2260-2;S(L,[{x:gx,y:gy},{x:gx+4,y:gy-14},{x:gx+9,y:gy},{x:gx+13,y:gy-11},{x:gx+18,y:gy}],grn,4)}
+  box(L,120,3800,400,3960,blue,5);S(L,kline(104,3804,260,3700),red,6);S(L,kline(260,3700,416,3804),red,6);F(L,rectP(160,3850,220,3910),.6,7,'#F2A766',5);
+  /* more of the slope (own seed): his grandfather's chimney and its smoke, the yard fence, a windsock blowing the way he'll go, two trees, flowers */
+  {const sv=R;seed(312);
+    box(L,326,3716,350,3760,red,4);S(L,resample(catmull([[338,3710],[326,3680],[350,3652],[334,3622],[356,3596]].map(([x,y])=>({x,y})),8),5),'#C9C3D2',4);S(L,kline(300,3960,300,3880,.5),blue,4);S(L,kcircle(300,3920,4,1.2),blue,3);
+    for(let x=420;x<640;x+=24){const y=slopeY(x)-2;S(L,kline(x,y,x+1,y-34,.5),'#8B6A45',4)}S(L,kline(420,slopeY(420)-24,640,slopeY(640)-24,.8),'#8B6A45',4);
+    {const bx=1060,by=slopeY(1060);S(L,kline(bx,by,bx-2,by-150,.8),'#5A5A62',5);for(let k=0;k<4;k++){const x0=bx+k*26,x1=x0+26,h0=20-k*3,h1=17-k*3,p=polyP([[x0,by-150+(20-h0)*.4],[x1,by-150+(20-h1)*.4+4],[x1,by-150+(20-h1)*.4+4+h1*1.6],[x0,by-150+(20-h0)*.4+h0*1.6]],.02);F(L,p,1.3,5,k%2?'#F7F3EA':'#B4553E',6);S(L,densify(p,4,true),ink,2)}}
+    for(const [tx,r] of [[1520,58],[1760,46]]){const ty=slopeY(tx);S(L,kline(tx,ty,tx+2,ty-r*1.3,1.5),'#7B5B3F',6);F(L,ellipsePoly(tx,ty-r*2,r,r*.9,10,0),.4,8,grn,6);S(L,kcircle(tx,ty-r*2,r+3,1.2),grn,5)}
+    for(let i=0;i<46;i++){const x=rnd(420,1900),y=slopeY(x)+rnd(10,220);S(L,kcircle(x,y,rnd(3,5.5),1.1),['#E79AC1','#F6E27A','#FBF8F0','#C9B8F0'][i%4],3)}
+    R=sv}
+  const clouds=[];
+  [[300,1820,640,230,4],[1500,1760,720,250,6],[900,1990,820,280,5],[200,2160,700,240,7],[1650,2120,760,260,4],[700,2330,900,300,6,1],[1400,2410,860,280,5,1],[300,2470,640,220,4,1],[1100,2250,700,240,7,1],[1800,2300,620,220,5,1],[600,2620,520,180,6],[1500,2700,600,200,4]]
+    .forEach(([cx,cy,w,h,v,front],i)=>{const c=paintCloud(w,h,500+i);clouds.push({x:cx,y:cy,v,can:c,cw:c.width*2,ch:c.height*2,front:!!front})});
+  BGS.ascent={world:true,base,items:L,clouds};GLIDER=buildGlider();
+}
+let GLIDER=[];
+const CAP='#7A5236',CAP_D='#4E3524'; // his flying cap (飞行帽): brown leather, darker seams
+
+/* ---------- chapter 2, re-shot over his shoulder: the run, the lift, the field falling away, the cloud, the dark — and, when he looks back, the earth as he drew it ---------- */
+const FL={};
+const EARTH={x:1080,y:450,r:360},MOON0={x:300,y:250},MOON1={x:860,y:-70},MOON2={x:1460,y:200},GL_R={x:1650,y:905};
+function kellipse(cx,cy,rx,ry,turns=1.08){const n=Math.round((rx+ry)*turns*.45)+16,a0=rnd(0,6.28),pts=[];
+  for(let i=0;i<=n;i++){const u=i/n,a=a0+u*turns*6.283,k=1+.03*Math.sin(u*11+a0)+(u-.5)*.04;pts.push({x:cx+Math.cos(a)*rx*k,y:cy+Math.sin(a)*ry*k})}return pts}
+/* like paintBase, at full size: for the map that gets looked at from close up */
+async function paintBaseFull(washes,w=W,h=H){const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');
+  x.fillStyle=PAPER;x.fillRect(0,0,w,h);x.globalCompositeOperation='multiply';for(const [poly,col,o] of washes){wash(x,poly,col,o);await nf()}
+  x.globalCompositeOperation='source-over';granulate(x,w,h);return c}
+/* the glider from behind: a long yellow plank of a wing, the pod, the tail — and his head over the rim, ears up */
+function buildGliderRear(){
+  seed(812);const L=[],ink='#2F3036',fur='#F3C93F',furD='#C99A1C'; // his fur is yellow (Sunny's sheet)
+  const wing=polyP([[-350,-4],[-34,-24],[34,-24],[350,-4],[350,14],[34,0],[-34,0],[-350,14]],.04);F(L,wing,.06,7,'#F7D66E',6);S(L,densify(wing,6,true),ink,4);
+  S(L,kline(-170,8,-48,60,1),ink,5);S(L,kline(170,8,48,60,1),ink,5);
+  const pod=ellipsePoly(0,72,56,40,16,.12);F(L,pod,.35,7,SUN,7);S(L,densify(pod,6,true),ink,5);
+  const fin=polyP([[-5,110],[5,110],[11,154],[-11,154]],.02);F(L,fin,0,5,SUN,4);S(L,densify(fin,4,true),ink,4);S(L,kline(-66,152,66,152,1),ink,5);
+  const h0=L.length; // his head starts here — the empty glider (after he climbs off) is the same drawing without it
+  const head=ellipsePoly(0,36,26,24,12,.08);F(L,head,.5,4,fur,6);S(L,densify(head,5,true),furD,4);
+  /* 飞行帽: a leather flying cap over his head, the goggles' band round the back, two straps blown back onto his shoulders */
+  {const cap=[];for(let q=0;q<=12;q++){const a=Math.PI+q/12*Math.PI;cap.push({x:Math.cos(a)*28,y:38+Math.sin(a)*27,v:.05})}cap.push({x:25,y:45,v:.05},{x:-25,y:45,v:.05});
+    F(L,cap,.9,4,CAP,6);S(L,densify(cap,4,true),CAP_D,3);S(L,[{x:-28,y:33},{x:0,y:37},{x:28,y:33}],'#3A3A44',4);
+    S(L,densify([{x:-23,y:45},{x:-31,y:58},{x:-42,y:66}],4),CAP_D,4);S(L,densify([{x:23,y:45},{x:31,y:58},{x:42,y:66}],4),CAP_D,4)}
+  const eL=polyP([[-23,26],[-19,-8],[-5,16]],.02),eR=polyP([[23,26],[19,-8],[5,16]],.02);
+  F(L,eL,.2,3,fur,4);S(L,densify(eL,4,true),furD,4);F(L,eR,.2,3,fur,4);S(L,densify(eR,4,true),furD,4);
+  const h1=L.length;
+  S(L,arcP(0,72,50,16,Math.PI*1.04,Math.PI*1.96,16),ink,5); // the cockpit rim, in front of him: he sits in it
+  FL.rearEmpty=[...L.slice(0,h0),...L.slice(h1)];
+  return L;
+}
+/* the same glider seen from above, nose up */
+function buildGliderTop(){
+  seed(813);const L=[],ink='#2F3036',fur='#F3C93F',furD='#C99A1C';
+  const wing=polyP([[-330,-18],[330,-18],[330,8],[-330,8]],.04);F(L,wing,.06,10,'#F7D66E',6);S(L,densify(wing,6,true),ink,4);
+  const body=polyP([[-18,-96],[18,-96],[14,130],[-14,130]],.04);F(L,body,1.5,8,SUN,7);S(L,densify(body,6,true),ink,5);
+  const tail=polyP([[-84,112],[84,112],[84,128],[-84,128]],.03);F(L,tail,.06,6,SUN,5);S(L,densify(tail,5,true),ink,4);
+  const head=ellipsePoly(0,-40,17,17,10,.08);F(L,head,.5,5,fur,5);S(L,densify(head,4,true),furD,4);
+  {const cap=ellipsePoly(0,-38,15,14,10,.05);F(L,cap,.9,4,CAP,5);S(L,densify(cap,4,true),CAP_D,3); // the cap from above: goggles on the brow, straps streaming back
+    S(L,kcircle(-6,-52,4,1.2),'#3A3A44',3);S(L,kcircle(6,-52,4,1.2),'#3A3A44',3);S(L,[{x:-11,y:-32},{x:-14,y:-20},{x:-12,y:-8}],CAP_D,3);S(L,[{x:11,y:-32},{x:14,y:-20},{x:12,y:-8}],CAP_D,3)}
+  S(L,[{x:-12,y:-50},{x:-9,y:-68},{x:-3,y:-54}],furD,4);S(L,[{x:12,y:-50},{x:9,y:-68},{x:3,y:-54}],furD,4);
+  return L;
+}
+async function buildFlight(){
+  const grn='#5F8050',ink='#2F3036',amber='#E58A55',gray='#4E4D58';
+  FL.rear=buildGliderRear();FL.top=buildGliderTop();
+  /* the run, from behind him: a worn track up the slope to the crest; the sky above the crest is cut away so the real sky can move behind it */
+  seed(320);
+  const crest=Array.from({length:25},(_,i)=>{const x=-20+i*82.5;return{x,y:574+Math.pow((x-1300)/1300,2)*46+Math.sin(i*1.3)*3}});
+  /* the sky those shots look into: one tall wash, light at the foot, deeper blue at the head, no ground in it */
+  FL.sky=await paintBase([
+    [bandPoly(-320,2480,10,.5),'#D3E4F6',{layers:18,alpha:.04}],
+    [bandPoly(-320,1500,10,.5),'#B4CFF0',{layers:20,alpha:.045}],
+    [bandPoly(-320,800,10,.5),'#8FB2E8',{layers:20,alpha:.05}],
+    [bandPoly(-320,300,10,.4),'#6E93DC',{layers:16,alpha:.05}],
+  ],1080);
+  const g=await paintBase([
+    [polyP([[-320,1240],[-320,560],[2240,560],[2240,1240]],.3),'#B5D295',{layers:28,alpha:.075,amt:.25}],
+    [bandPoly(560,780,10,.4),'#A7C888',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[1150,1240],[1460,1240],[1318,575],[1284,575]],.15),'#D2DEA6',{layers:16,alpha:.045,amt:.15}],
+    [bandPoly(700,1240,10,.3),'#A3C384',{layers:18,alpha:.04,amt:.3}],
+    [bandPoly(860,1240,10,.3),'#8DB070',{layers:16,alpha:.04,amt:.3}],
+    [bandPoly(1000,1240,10,.3),'#7C9F61',{layers:12,alpha:.04,amt:.3}],
+  ]);
+  {const x=g.getContext('2d');x.save();x.scale(.5,.5);x.globalCompositeOperation='destination-out';x.fillStyle='#000';x.beginPath();x.moveTo(-40,-40);x.lineTo(1960,-40);
+    for(let i=crest.length-1;i>=0;i--)x.lineTo(crest[i].x,crest[i].y-2);x.closePath();x.fill();x.restore()}
+  FL.ground=g;
+  let L=[];
+  S(L,densify(crest.map(p=>({x:p.x,y:p.y})),6),grn,6);
+  [[260,24],[340,18],[1720,26],[1800,18],[880,14]].forEach(([tx,r])=>{const ty=574+Math.pow((tx-1300)/1300,2)*46;S(L,kline(tx,ty,tx,ty-r*1.6,1),'#7B5B3F',4);F(L,ellipsePoly(tx,ty-r*2.2,r,r,10,0),.4,7,grn,5);S(L,kcircle(tx,ty-r*2.2,r+2,1.2),grn,4)});
+  FL.groundItems=L;
+  L=[];const sun=[];for(let i=0;i<=40;i++){const a=i/40*6.4;sun.push({x:1060+Math.cos(a)*46,y:190+Math.sin(a)*44})}S(L,sun,amber,7);
+  for(let k=0;k<10;k++){const a=k/10*6.283+.2;S(L,kline(1060+Math.cos(a)*64,190+Math.sin(a)*62,1060+Math.cos(a)*96,190+Math.sin(a)*92,1.2),amber,5)}
+  FL.skyItems=L;
+  /* looking down: his grandfather's field as a child's map — patchwork, contour lines round the hill, the river, the house, and two dots */
+  seed(330);
+  const rp=[[-320,880],[200,800],[620,930],[1100,1000],[1600,930],[2240,980]];
+  const map=await paintBaseFull([
+    [bandPoly(-320,1240,10,.3),'#D6E5B6',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[80,60],[640,30],[680,400],[120,440]],.3),'#B9D493',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[1220,40],[1840,90],[1800,430],[1180,400]],.3),'#EBDE98',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[1240,610],[1880,650],[1840,1020],[1200,980]],.3),'#A9CB86',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[40,640],[480,600],[520,1020],[60,1060]],.3),'#CBE0A4',{layers:14,alpha:.05,amt:.3}],
+    [ellipsePoly(900,560,560,320,16,.4),'#A6C685',{layers:16,alpha:.05,amt:.3}],
+    [ellipsePoly(900,560,380,220,16,.4),'#93B674',{layers:14,alpha:.05,amt:.3}],
+    [ellipsePoly(900,560,220,130,14,.4),'#82A766',{layers:12,alpha:.05,amt:.3}],
+    [polyP([...rp.map(([a,b])=>[a,b-34]),...rp.slice().reverse().map(([a,b])=>[a,b+34])],.2),'#9DC3EC',{layers:16,alpha:.06,amt:.15}],
+  ]);
+  {const x=map.getContext('2d'),gr=x.createRadialGradient(960,560,560,960,560,1060);gr.addColorStop(0,'#000');gr.addColorStop(1,'rgba(0,0,0,0)');
+    x.globalCompositeOperation='destination-in';x.fillStyle=gr;x.fillRect(0,0,W,H);x.globalCompositeOperation='source-over'} // the map's edge melts into the haze
+  FL.map=map;L=[];
+  [[560,410],[410,300],[270,190],[140,82]].forEach(([rx,ry])=>S(L,kellipse(900,560,rx,ry),'#6E8F55',4));
+  [-34,34].forEach(o=>S(L,resample(catmull(rp.map(([a,b])=>({x:a,y:b+o})),12),7),'#5C86C8',4));
+  box(L,500,690,610,770,'#B4553E',5);F(L,rectP(503,693,607,767),.8,11,'#C9705A',4);S(L,kline(500,730,610,730),'#B4553E',5);
+  S(L,resample(catmull([[610,730],[900,780],[1300,700],[1940,660]].map(([a,b])=>({x:a,y:b})),12),7),'#C8B48A',5);
+  [[380,560,30],[420,622,22],[1480,520,28],[1530,592,20],[700,330,26],[1180,770,24]].forEach(([tx,ty,r])=>{F(L,ellipsePoly(tx,ty,r*.85,r*.85,10,0),.4,8,'#7DA35E',5);S(L,kcircle(tx,ty,r,1.3),grn,5)});
+  for(let k=0;k<9;k++){const u0=k/9,u1=u0+.06;S(L,[{x:lerp(760,1090,u0),y:lerp(642,500,u0)},{x:lerp(760,1090,u1),y:lerp(642,500,u1)}],SUN_D,5)} // the take-off run, dashed
+  const md=ellipsePoly(800,664,10,10,8,.2);F(L,md,.6,4,'#4D6FB8',6);S(L,densify(md,3,true),ink,3);handText(L,'妈妈',826,650,40,ink);
+  const gd=ellipsePoly(756,694,8,8,8,.2);F(L,gd,.6,4,gray,5);S(L,densify(gd,3,true),ink,3);handText(L,'祖父',690,750,30,gray);
+  FL.mapItems=L;
+  await nf();
+  /* the dark, his earth, his moon */
+  {const c=document.createElement('canvas');c.width=960;c.height=540;const x=c.getContext('2d');
+    x.fillStyle='#07081A';x.fillRect(0,0,960,540);x.scale(.5,.5);x.globalCompositeOperation='screen';seed(340);
+    for(const [poly,col,o] of [ /* the dark is never quite black: a little of the earth's blue, a violet drift, a cold teal */
+      [ellipsePoly(1080,460,700,520,16,.5),'#172259',{layers:16,alpha:.03,amt:.4}],
+      [ellipsePoly(360,300,520,340,14,.6),'#2A1A4E',{layers:14,alpha:.03,amt:.45}],
+      [ellipsePoly(1680,180,420,240,14,.6),'#0C2C40',{layers:12,alpha:.03,amt:.45}],
+      [ellipsePoly(300,880,480,240,14,.6),'#1E1846',{layers:12,alpha:.03,amt:.45}],
+    ]){wash(x,poly,col,o);await nf()}
+    FL.space=c}
+  {const r=EARTH.r,P=Math.round(r*.3),S2=Math.ceil((r+P)*2),c=document.createElement('canvas');c.width=c.height=S2;const x=c.getContext('2d'),o=S2/2;seed(341);
+    x.globalCompositeOperation='screen'; /* the scribbled ring of air round it: violet, blue, teal */
+    [[1.24,'#4B3A8E',.035],[1.15,'#3C6BD0',.045],[1.08,'#4FC3C8',.04]].forEach(([k,col,a])=>wash(x,ellipsePoly(o,o,r*k,r*k,22,.5),col,{layers:16,alpha:a,amt:.25}));
+    await nf();
+    /* the disc, as he coloured it: periwinkle sea, soft green land, white streaks of cloud */
+    x.globalCompositeOperation='source-over';x.save();x.beginPath();x.arc(o,o,r,0,6.2832);x.clip();
+    x.fillStyle='#92B2F6';x.fillRect(0,0,S2,S2);
+    wash(x,ellipsePoly(o-r*.25,o-r*.15,r*.9,r*.8,16,.5),'#7FA2F0',{layers:12,alpha:.06,amt:.35});
+    wash(x,ellipsePoly(o+r*.35,o+r*.3,r*.7,r*.6,16,.5),'#B4CDFB',{layers:12,alpha:.07,amt:.35});
+    [[-.38,.14,.21,.3],[.06,-.44,.17,.2],[.44,-.04,.13,.27],[.14,.52,.15,.16],[-.1,.06,.08,.1]].forEach(([dx,dy,rx,ry])=>wash(x,ellipsePoly(o+dx*r,o+dy*r,rx*r,ry*r,12,.7),'#9BDB8C',{layers:14,alpha:.1,amt:.4}));
+    for(let i=0;i<12;i++){const a=rnd(0,6.28),d=rnd(0,r*.8);wash(x,ellipsePoly(o+Math.cos(a)*d,o+Math.sin(a)*d,r*rnd(.18,.38),r*rnd(.05,.1),12,.6),'#FBFCFF',{layers:9,alpha:.12,amt:.45})}
+    x.globalCompositeOperation='multiply';wash(x,ellipsePoly(o-r*.7,o+r*.65,r*.8,r*.8,16,.4),'#5866B0',{layers:10,alpha:.045,amt:.3});
+    /* the sun is up to the left: the east limb, where the moon comes round, falls into night — with a few warm towns in it */
+    x.globalCompositeOperation='source-over';
+    {const sg=x.createRadialGradient(o-r*.5,o-r*.42,r*.25,o-r*.22,o-r*.16,r*1.5);sg.addColorStop(0,'rgba(8,10,34,0)');sg.addColorStop(.5,'rgba(8,10,34,0)');sg.addColorStop(.74,'rgba(12,14,44,.6)');sg.addColorStop(1,'rgba(4,5,20,.92)');x.fillStyle=sg;x.fillRect(0,0,S2,S2)}
+    x.globalCompositeOperation='lighter';
+    for(let i=0;i<90;i++){const a=rnd(-.9,1.9),d=r*Math.sqrt(rnd(.35,.97)),px=o+Math.cos(a)*d,py=o+Math.sin(a)*d;if(Math.hypot(px-(o-r*.22),py-(o-r*.16))<r*1.08)continue;
+      x.fillStyle=`rgba(255,${190+R()*40|0},110,${rnd(.25,.7).toFixed(2)})`;const z=rnd(1.2,3.2);x.beginPath();x.arc(px,py,z,0,6.2832);x.fill()}
+    x.restore();granulate(x,S2,S2);FL.earth={can:c,S:S2}}
+  await nf();
+  {const r=84,S2=Math.ceil(r*3),c=document.createElement('canvas');c.width=c.height=S2;const x=c.getContext('2d'),o=S2/2;seed(342);
+    x.globalCompositeOperation='screen';wash(x,ellipsePoly(o,o,r*1.35,r*1.35,18,.5),'#5D6A94',{layers:12,alpha:.05,amt:.3}); // white, wet: a damp halo
+    x.globalCompositeOperation='source-over';x.save();x.beginPath();x.arc(o,o,r,0,6.2832);x.clip();x.fillStyle='#ECEDF1';x.fillRect(0,0,S2,S2);
+    wash(x,ellipsePoly(o+r*.25,o+r*.3,r*.8,r*.7,12,.5),'#CDD2DE',{layers:10,alpha:.12,amt:.4});
+    [[-.3,-.2,.18],[.25,-.35,.12],[.1,.3,.15],[-.35,.35,.1]].forEach(([dx,dy,rr])=>wash(x,ellipsePoly(o+dx*r,o+dy*r,rr*r,rr*r*.8,10,.6),'#C4C9D7',{layers:8,alpha:.2,amt:.35}));
+    /* its seas (the darker grey), craters with a lit rim and a shadowed floor, and the same sun as the earth's: night on its right */
+    [[-.22,-.28,.34,.24],[.18,-.05,.26,.2],[-.05,.32,.22,.16],[.38,.3,.16,.12]].forEach(([dx,dy,rx,ry])=>wash(x,ellipsePoly(o+dx*r,o+dy*r,rx*r,ry*r,12,.6),'#A9AEBE',{layers:10,alpha:.16,amt:.35}));
+    for(let i=0;i<26;i++){const a=rnd(0,6.28),d=r*Math.sqrt(R())*.9,cx=o+Math.cos(a)*d,cy=o+Math.sin(a)*d,cr=r*Math.pow(R(),2)*.13+2.5;
+      x.strokeStyle='rgba(120,126,146,.55)';x.lineWidth=Math.max(1,cr*.22);x.beginPath();x.arc(cx+cr*.15,cy+cr*.15,cr,0,6.2832);x.stroke();
+      x.strokeStyle='rgba(255,255,255,.6)';x.lineWidth=Math.max(1,cr*.18);x.beginPath();x.arc(cx,cy,cr,Math.PI*.9,Math.PI*1.6);x.stroke()}
+    {const sg=x.createRadialGradient(o-r*.45,o-r*.35,r*.2,o-r*.15,o-r*.1,r*1.45);sg.addColorStop(0,'rgba(20,24,48,0)');sg.addColorStop(.55,'rgba(20,24,48,0)');sg.addColorStop(.8,'rgba(20,24,52,.45)');sg.addColorStop(1,'rgba(10,12,30,.8)');x.fillStyle=sg;x.fillRect(0,0,S2,S2)}
+    x.restore();granulate(x,S2,S2);FL.moon={can:c,S:S2}}
+  /* crayon over the dark: stars, his outline of the earth, the belt in white scribble with rocks hung in colour, his labels */
+  /* a violet-teal bloom screened over the dark when the colours come (翻折。蓝紫色。青光。) */
+  {const c=document.createElement('canvas');c.width=960;c.height=540;const x=c.getContext('2d');x.fillStyle='#000';x.fillRect(0,0,960,540);x.scale(.5,.5);x.globalCompositeOperation='screen';seed(344);
+    for(const [poly,col,o] of [
+      [ellipsePoly(1080,450,900,640,16,.5),'#5B3FA8',{layers:14,alpha:.05,amt:.4}],
+      [ellipsePoly(260,720,520,380,14,.6),'#23A7A2',{layers:14,alpha:.05,amt:.45}],
+      [ellipsePoly(520,140,520,240,14,.6),'#B5509A',{layers:12,alpha:.045,amt:.45}],
+      [ellipsePoly(1700,760,420,300,14,.6),'#3D5FD6',{layers:12,alpha:.045,amt:.45}],
+    ]){wash(x,poly,col,o);await nf()}
+    FL.bloom=c}
+  seed(343);L=[];
+  const starCols=['#FFFDF4','#FFFDF4','#FFFDF4','#F7C6E0','#B8F0E6','#D6CCFF','#FBE3A4'];
+  for(let i=0;i<90;i++){const sx=rnd(0,1920),sy=rnd(0,1000),s=rnd(2,7),col=starCols[i%starCols.length];if(Math.hypot(sx-EARTH.x,sy-EARTH.y)<EARTH.r+40)continue;S(L,[{x:sx-s,y:sy},{x:sx+s,y:sy}],col,s>5?4:3);if(s>5)S(L,[{x:sx,y:sy-s},{x:sx,y:sy+s}],col,3)}
+  S(L,kcircle(EARTH.x,EARTH.y,EARTH.r+5,1.12),'#A9C3F5',5);
+  const belt=[[-80,450],[110,548],[250,680],[350,840],[430,1120]];
+  for(let k=0;k<6;k++){const o=k*24-60,pts=resample(catmull(belt.map(([a,b])=>({x:a+o+rnd(-14,14),y:b-o*.35+rnd(-12,12)})),14),6),a=Math.floor(rnd(0,pts.length*.3)),b=Math.floor(pts.length*rnd(.65,1));S(L,pts.slice(a,b),'#EEEEF6',k%2?3:5)}
+  const rockCols=['#7FD1C7','#E79AC1','#9C8FE0','#F08C6B','#F2D27A','#8FD3F0'];FL.rocks=[];
+  const bc=resample(catmull(belt.map(([a,b])=>({x:a,y:b})),14),4);
+  for(let i=0;i<30;i++){const q=bc[Math.floor(rnd(0,bc.length))],px=q.x+rnd(-70,70),py=q.y+rnd(-40,40),rr=rnd(6,19),poly=ellipsePoly(px,py,rr,rr*rnd(.6,.9),9,.6);
+    F(L,poly,rnd(0,3),5,rockCols[i%6],5);S(L,densify(poly,4,true),'#F5F2EA',3);if(i%3===0)FL.rocks.push({x:px,y:py,r:rr,p:rnd(0,6.28)})}
+  handText(L,'地球',1452,604,58,'#A9C9F7');S(L,kline(1450,580,1418,556,1),'#A9C9F7',4);
+  handText(L,'小行星带',330,640,46,'#EEEEF6');S(L,kline(326,626,262,664,1),'#EEEEF6',4);
+  handText(L,'滑翔机',1200,792,40,SUN);S(L,kline(1330,786,1520,872,2),SUN,4);
+  handText(L,'我',1752,858,44,SUN);S(L,kline(1748,846,1690,912,1),SUN,4);
+  FL.spaceItems=L;
+  /* colours shaken loose off the rim: 离散出梦幻的色彩 */
+  FL.disp=Array.from({length:72},(_,k)=>({a:3.1+rnd(0,3.2),d:rnd(0,1.1),sp:rnd(40,150),s:rnd(2,6),col:rockCols[k%rockCols.length]}));
+  L=[];S(L,kcircle(0,0,90,1.1),'#D9DCE4',5);handText(L,'月球',-150,-92,50,'#CFD3DD');S(L,kline(-96,-86,-62,-66,1),'#CFD3DD',4);FL.moonItems=L;
+  /* the star river that follows the moon across: dense along its path */
+  FL.river=[];for(let i=0;i<300;i++){const u=Math.pow(R(),.9),p=moonAt(u),dx=gauss()*30,dy=gauss()*22;FL.river.push({u,x:p.x+dx,y:p.y+40+dy,s:rnd(1,3.2)})}
+  FL.mark=[];handText(FL.mark,'最高的地方',1196,720,46,SUN);FL.markRing=kellipse(GL_R.x,GL_R.y+40,210,120,1.15);
+  await buildGrand();
+  await buildOneTake();
+}
+/* ---- chapter 2 in one take: what the single camera over his shoulder needs — the field as a ground plane (seen in 2.5D), hills on its edge,
+   a sky that runs from blue to black, and three people in his crayon: Mother, Grandfather, and Cus himself for when he climbs out ---- */
+const FIELD={X0:-1400,Y1:1800,mpp:2.5,n:1120};          // the far field texture: x from −1400 m, y (forward) down from +1800 m, 2.5 m a pixel (tiles beyond)
+/* two finer layers over the middle of it, so the ground keeps its grain as he climbs: the hill (0.5 m a pixel) and the grass round the run (0.1 m a pixel) */
+const GLOD=[{k:'mid',X0:-300,X1:300,Y0:-220,Y1:480,mpp:.5,fade:[900,1500]},{k:'near',X0:-50,X1:50,Y0:-30,Y1:130,mpp:.1,fade:[40,110]}]; // fade: gone by this height (m)
+/* a pattern laid on the ground at an angle: the forward matrix canvas→texel for one strip, inverted for the pattern */
+function groundPat(pat,ang,mpp,xl,Ytop,m,k,sy){const ca=Math.cos(ang),sa=Math.sin(ang),Yk=Ytop+k*sy;
+  pat.setTransform(new DOMMatrix([ca*m/mpp,sa*m/mpp,-sa*k/mpp,ca*k/mpp,(ca*xl+sa*Yk)/mpp,(sa*xl-ca*Yk)/mpp]).inverse())}
+const MOM={X:-3.7,Y:1.6},GPA={X:7.8,Y:6.5};             // where they stand, in metres from the start of the run (x = to his right, y = ahead)
+/* soften a layer's edges to nothing, so the coarser layer under it shows through without a seam */
+function fadeEdges(c,fr=.16){const w=c.width,h=c.height,x=c.getContext('2d'),m=document.createElement('canvas');m.width=w;m.height=h;const mx=m.getContext('2d'),f=Math.min(w,h)*fr;
+  const gx=mx.createLinearGradient(0,0,w,0);gx.addColorStop(0,'rgba(0,0,0,0)');gx.addColorStop(f/w,'#000');gx.addColorStop(1-f/w,'#000');gx.addColorStop(1,'rgba(0,0,0,0)');mx.fillStyle=gx;mx.fillRect(0,0,w,h);
+  mx.globalCompositeOperation='destination-in';const gy=mx.createLinearGradient(0,0,0,h);gy.addColorStop(0,'rgba(0,0,0,0)');gy.addColorStop(f/h,'#000');gy.addColorStop(1-f/h,'#000');gy.addColorStop(1,'rgba(0,0,0,0)');mx.fillStyle=gy;mx.fillRect(0,0,w,h);
+  x.globalCompositeOperation='destination-in';x.drawImage(m,0,0);x.globalCompositeOperation='source-over';return c}
+/* paint a ground layer: draw(x,P) gets the context (paper already down, multiply on) and a metres→pixels mapper */
+function groundLayer(L,draw){const w=Math.round((L.X1-L.X0)/L.mpp),h=Math.round((L.Y1-L.Y0)/L.mpp),c=document.createElement('canvas');c.width=w;c.height=h;
+  const x=c.getContext('2d'),P=(X,Y)=>({x:(X-L.X0)/L.mpp,y:(L.Y1-Y)/L.mpp});x.fillStyle=PAPER;x.fillRect(0,0,w,h);x.globalCompositeOperation='multiply';draw(x,P,w,h);
+  x.globalCompositeOperation='source-over';L.can=fadeEdges(c);return c}
+/* grass hatching, batched by colour: n short upright strokes in a rectangle (px), skipping where skip(px,py) says */
+function hatch(x,w,h,list,len,skip){x.lineCap='round';for(const [col,n,lw] of list){x.strokeStyle=col;x.lineWidth=lw;x.globalAlpha=.5;x.beginPath();
+  for(let k=0;k<n;k++){const px=rnd(0,w),py=rnd(0,h);if(skip&&skip(px,py))continue;x.moveTo(px,py);x.lineTo(px+rnd(-.3,.3)*len,py-rnd(.5,1)*len)}x.stroke()}x.globalAlpha=1}
+async function buildOneTake(){
+  const P=(X,Y)=>({x:(X-FIELD.X0)/FIELD.mpp,y:(FIELD.Y1-Y)/FIELD.mpp});
+  const rq=(X0,Y0,X1,Y1,v=.25,j=0)=>{const a=P(X0,Y0),b=P(X1,Y1),x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y);
+    return[{x:x0+rnd(-j,j),y:y0+rnd(-j,j),v},{x:x1+rnd(-j,j),y:y0+rnd(-j,j),v},{x:x1+rnd(-j,j),y:y1+rnd(-j,j),v},{x:x0+rnd(-j,j),y:y1+rnd(-j,j),v}]};
+  const el=(X,Y,rx,ry,v=.4)=>{const c=P(X,Y);return ellipsePoly(c.x,c.y,rx/FIELD.mpp,ry/FIELD.mpp,16,v)};
+  seed(1200);
+  /* the patchwork: blocks of every size between the lanes, each split into fields of every green and straw, the whole grid turned a little off his line;
+     the hill they take off from stays one meadow */
+  const pal=['#B9D493','#E8DB94','#A9CB86','#CBE0A4','#D8E3A6','#E3D49A','#9FC27F','#C2D89A','#D7C98F','#C9B98A'],patches=[];
+  {const ang=.14,ca=Math.cos(ang),sa=Math.sin(ang),rot=(X,Y)=>({X:X*ca-Y*sa,Y:X*sa+Y*ca}),leaves=[];
+    const split=(x0,y0,x1,y1,d)=>{const w=x1-x0,h=y1-y0;if(d>3||w*h<rnd(14000,42000)){leaves.push([x0,y0,x1,y1]);return}
+      if(w>h*rnd(.7,1.3)){const s=x0+w*rnd(.32,.68);split(x0,y0,s,y1,d+1);split(s,y0,x1,y1,d+1)}else{const s=y0+h*rnd(.32,.68);split(x0,y0,x1,s,d+1);split(x0,s,x1,y1,d+1)}};
+    for(let gy=-1900;gy<2200;){const bh=rnd(260,430);for(let gx=-2100;gx<2100;){const bw=rnd(280,470);split(gx+5,gy+5,gx+bw-5,gy+bh-5,0);gx+=bw}gy+=bh}
+    for(const [x0,y0,x1,y1] of leaves){const pts=[[x0+1,y0+1],[x1-1,y0+1],[x1-1,y1-1],[x0+1,y1-1]].map(([X,Y])=>rot(X+rnd(-3,3),Y+rnd(-3,3)));
+      const cx=(pts[0].X+pts[2].X)/2,cy=(pts[0].Y+pts[2].Y)/2;
+      if(Math.pow((cx+60)/500,2)+Math.pow((cy-40)/400,2)<1||Math.abs(cx)>1450||cy<-1050||cy>1260)continue;
+      const kind=R();patches.push({pts,cx,cy,c:pal[Math.floor(R()*pal.length)],plow:kind<.12,orch:kind>.92})}}
+  const rv=Array.from({length:16},(_,i)=>{const X=-1500+i*200;return{X,Y:470+Math.sin(X/330)*80}});
+  const band=(pts,hw,v=.2)=>[...pts.map(p=>({...P(p.X,p.Y+hw),v})),...pts.slice().reverse().map(p=>({...P(p.X,p.Y-hw),v}))];
+  const woods=Array.from({length:18},()=>({X:rnd(-1350,1350),Y:rnd(-950,1150),rx:rnd(40,110),ry:rnd(30,80)})).filter(w=>!(Math.abs(w.X)<520&&w.Y>-380&&w.Y<420));
+  const town=Array.from({length:70},()=>({X:rnd(-900,900),Y:rnd(1300,1750)}));
+  FL.field=await paintBaseFull([
+    [rq(-1500,-1100,1500,1900,.2),'#CFE0AA',{layers:12,alpha:.05,amt:.2}],
+    ...patches.map(p=>[p.pts.map(q=>({...P(q.X,q.Y),v:.22})),p.plow?'#C7A77A':p.c,{layers:8,alpha:.07,amt:.22}]),
+    [el(-60,40,520,400),'#BFD995',{layers:12,alpha:.05}],[el(-60,40,330,250),'#AED08A',{layers:10,alpha:.05}],[el(-60,40,170,130),'#A0C67F',{layers:10,alpha:.05}],
+    ...woods.map(w=>[el(w.X,w.Y,w.rx,w.ry,.5),'#7FA466',{layers:10,alpha:.08}]),
+    [band(rv,14),'#9DC3EC',{layers:14,alpha:.09,amt:.12}],
+    [el(640,-560,150,95,.3),'#9CC2E6',{layers:12,alpha:.09}],
+    [rq(-1000,1260,1000,1780,.3),'#DCD3C4',{layers:10,alpha:.05}],
+    ...town.map(t=>[rq(t.X,t.Y,t.X+rnd(10,22),t.Y+rnd(8,16),.05),['#D9B9A0','#C9C2B8','#E4D2B2'][Math.floor(R()*3)],{layers:6,alpha:.14,amt:.1}]),
+    [rq(-3.5,-12,3.5,96,.03),'#ECE7C2',{layers:10,alpha:.12,amt:.05}],                 // the worn strip of the take-off run
+    [rq(-80,-60,-40,-20,.05),'#DCCBA6',{layers:8,alpha:.1,amt:.1}],[rq(-70,-52,-54,-36,.03),'#C9705A',{layers:8,alpha:.18,amt:.08}], // grandfather's yard and roof
+  ],FIELD.n,FIELD.n);
+  /* his crayon over the map, at twice the resolution: shown only once he is high enough to see it as a map */
+  {const Q=(X,Y)=>{const p=P(X,Y);return{x:p.x*2,y:p.y*2}},L=[];
+    for(const p of patches){const q=p.pts.map(o=>Q(o.X,o.Y));for(let e=0;e<4;e++)if(hh(Math.round(p.cx*7+p.cy*13)+e*31)<.75)S(L,kline(q[e].x,q[e].y,q[(e+1)%4].x,q[(e+1)%4].y,1.2),'#86A266',3); // hedges on most edges
+      if(p.plow)for(let k=1;k<7;k++){const a=k/7,A={x:lerp(q[0].x,q[1].x,a),y:lerp(q[0].y,q[1].y,a)},B={x:lerp(q[3].x,q[2].x,a),y:lerp(q[3].y,q[2].y,a)};S(L,[A,B],'#9C7A52',2)} // furrows
+      if(p.orch)for(let k=0;k<12;k++){const a=(k%4+.5)/4,b=(Math.floor(k/4)+.5)/3,A={x:lerp(lerp(q[0].x,q[1].x,a),lerp(q[3].x,q[2].x,a),b),y:lerp(lerp(q[0].y,q[1].y,a),lerp(q[3].y,q[2].y,a),b)};S(L,kcircle(A.x,A.y,3.5,1.2),'#5F8050',3)}}
+    for(const o of [-14,14])S(L,resample(catmull(rv.map(p=>Q(p.X,p.Y+o)),10),6),'#5C86C8',4);
+    S(L,resample(catmull([Q(-560,-120),Q(-700,-60),Q(-1000,-160),Q(-1400,-200)],10),6),'#C8B48A',4);  // the lane out of the valley
+    for(const w of woods)for(let k=0;k<5;k++){const c=Q(w.X+rnd(-w.rx,w.rx)*.6,w.Y+rnd(-w.ry,w.ry)*.6);S(L,kcircle(c.x,c.y,rnd(5,9),1.2),'#5F8050',3)}
+    for(const t of town){const a=Q(t.X,t.Y);box(L,a.x,a.y-10,a.x+14,a.y,'#8E8578',2)}
+    const lc=document.createElement('canvas');lc.width=lc.height=FIELD.n*2;const lx=lc.getContext('2d');drawItems(lx,L,0,0,1,0,0);toothOn(lx,lc.width,lc.height);FL.fieldL=lc}
+  await nf();
+  /* the hill, finer: its contour rings, Grandfather's house and yard and fence, the pond, trees with their shadows, sheep, the worn run */
+  groundLayer(GLOD[0],(x,P,w,h)=>{const mpp=GLOD[0].mpp,E=(X,Y,rx,ry,v=.5)=>{const c=P(X,Y);return ellipsePoly(c.x,c.y,rx/mpp,ry/mpp,16,v)};
+    const RQ=(X0,Y0,X1,Y1,v=.1)=>{const a=P(X0,Y1),b=P(X1,Y0);return rectP(a.x,a.y,b.x,b.y,v)};
+    seed(1300);
+    wash(x,rectP(-40,-40,w+40,h+40,.2),'#CFE0AA',{layers:12,alpha:.05,amt:.2});wash(x,E(-60,40,520,400),'#BFD995',{layers:12,alpha:.05});
+    [[330,250],[170,130],[70,55]].forEach(([rx,ry],i)=>wash(x,E(-60,40,rx,ry),['#AED08A','#A0C67F','#97BE76'][i],{layers:10,alpha:.05}));
+    for(let k=0;k<60;k++)wash(x,E(rnd(-290,290),rnd(-210,470),rnd(12,50),rnd(10,40)),['#C9DDA0','#B3D08C','#D9E2A0','#A9C987'][k%4],{layers:6,alpha:.06});
+    const trees=[];for(let k=0;k<70;k++){const X=rnd(-280,280),Y=rnd(-200,460);if(Math.abs(X)<14&&Y>-20&&Y<120)continue;if(X>-95&&X<-25&&Y>-75&&Y<-5)continue;trees.push({X,Y,r:rnd(3,7.5)})}
+    for(let k=0;k<14;k++){const X=rnd(-260,260),Y=rnd(-180,440);if(Math.abs(X)<30&&Y>-30&&Y<130)continue;for(let q=0;q<7;q++)trees.push({X:X+gauss()*9,Y:Y+gauss()*7,r:rnd(3,6)})} // copses
+    for(const t of trees)wash(x,E(t.X+t.r*.6,t.Y-t.r*.5,t.r*1.1,t.r*.9,.3),'#9FB78E',{layers:6,alpha:.12,amt:.2}); // their shadows
+    hatch(x,w,h,[['#7E9E60',9000,1.4],['#93B271',9000,1.2],['#A9C482',7000,1.1]],4);
+    x.globalCompositeOperation='source-over';wash(x,RQ(-1.8,-12,1.8,98),'#E9E2BC',{layers:10,alpha:.08,amt:.06});wash(x,RQ(-84,-64,-36,-16),'#E6D8B4',{layers:8,alpha:.1,amt:.1});x.globalCompositeOperation='multiply';
+    wash(x,E(150,-130,28,18,.3),'#A9CCEB',{layers:12,alpha:.14,amt:.25});x.globalCompositeOperation='source-over';
+    const L=[],Q=P;
+    {const a=Q(-70,-36),b=Q(-54,-52),roof=rectP(a.x,a.y,b.x,b.y,.05);F(L,roof,.6,5,'#C9705A',5);box(L,a.x,a.y,b.x,b.y,'#8E3F2E',3);S(L,kline(a.x,(a.y+b.y)/2,b.x,(a.y+b.y)/2,.5),'#8E3F2E',3)}
+    {const a=Q(-84,-16),b=Q(-36,-64);for(const [p,q] of [[a,{x:b.x,y:a.y}],[{x:b.x,y:a.y},b],[b,{x:a.x,y:b.y}],[{x:a.x,y:b.y},a]]){const n=12;for(let k=0;k<n;k+=2)S(L,[{x:lerp(p.x,q.x,k/n),y:lerp(p.y,q.y,k/n)},{x:lerp(p.x,q.x,(k+1)/n),y:lerp(p.y,q.y,(k+1)/n)}],'#8B6A45',3)}} // the fence
+    S(L,resample(catmull([Q(-60,-64),Q(-120,-100),Q(-220,-120),Q(-320,-110)],10),5),'#C8B48A',5); // the lane
+    [[330,250],[170,130],[70,55]].forEach(([rx,ry])=>{const c=Q(-60,40);S(L,kellipse(c.x,c.y,rx/mpp,ry/mpp),'#7E9E62',2.5)});
+    for(const t of trees){const c=Q(t.X,t.Y),r=t.r/mpp,p=ellipsePoly(c.x,c.y,r,r*.92,10,.3);F(L,p,.5,4,'#7FA466',5);S(L,kcircle(c.x,c.y,r,1.2),'#5F8050',3)}
+    for(let k=0;k<7;k++){const c=Q(rnd(60,240),rnd(120,300)),p=ellipsePoly(c.x,c.y,5,3.4,8,.1);F(L,p,.4,3,'#FBF8F0',4);S(L,densify(p,3,true),'#8A8896',2);S(L,kcircle(c.x+5.5,c.y,1.6,1.2),'#3E3A48',3)} // sheep
+    for(const s of [-.8,.8])S(L,[Q(s,-10),Q(s,96)],'#B8A980',2.5);
+    for(let k=0;k<12;k++)S(L,[Q(0,k*8),Q(0,k*8+4)],SUN_D,3); // his run, dashed in yellow (only reads once he is high)
+    const c=document.createElement('canvas');c.width=w;c.height=h;const cx=c.getContext('2d');drawItems(cx,L,0,0,1,0,0);toothOn(cx,w,h);x.globalCompositeOperation='source-over';x.drawImage(c,0,0)});
+  await nf();
+  /* the grass right round the run: the meadow's own green, hatching in four greens, flowers, the pale worn strip with its two ruts */
+  groundLayer(GLOD[1],(x,P,w,h)=>{seed(1310);
+    wash(x,rectP(-40,-40,w+40,h+40,.2),'#B9D48F',{layers:12,alpha:.06,amt:.2});
+    for(let k=0;k<50;k++){const c=P(rnd(-50,50),rnd(-30,130));wash(x,ellipsePoly(c.x,c.y,rnd(30,110),rnd(20,80),12,.5),['#C9DDA0','#A9C987','#D9E2A0'][k%3],{layers:6,alpha:.06,amt:.4})}
+    {const a=P(-1.6,100),b=P(1.6,-12);x.globalCompositeOperation='source-over';wash(x,rectP(a.x,a.y,b.x,b.y,.05),'#E9E2BC',{layers:10,alpha:.09,amt:.05});x.globalCompositeOperation='multiply'} // the worn strip, paler than the grass
+    const top=P(0,98).y,bot=P(0,-10).y,cxp=P(0,0).x;
+    hatch(x,w,h,[['#5E8448',2600,1.8],['#6E9455',2800,1.6],['#82A564',2600,1.5],['#97B873',1800,1.4]],8,(px,py)=>Math.abs(px-cxp)<14&&py>top&&py<bot&&R()<.85);
+    x.globalCompositeOperation='source-over';x.globalAlpha=.55;x.strokeStyle='#B9AA82';x.lineWidth=3;for(const s of [-.8,.8]){x.beginPath();for(let Y=-12;Y<=98;Y+=2){const p=P(s+Math.sin(Y*.3)*.05,Y);if(Y===-12)x.moveTo(p.x,p.y);else x.lineTo(p.x,p.y)}x.stroke()}
+    x.globalAlpha=1;for(let k=0;k<300;k++){const px=rnd(0,w),py=rnd(0,h);x.fillStyle=['#FBF8F0','#F6E27A','#E9A9C0','#C9B8F0','#FBF8F0'][k%5];x.beginPath();x.arc(px,py,rnd(1.6,3.6),0,6.2832);x.fill()}});
+  await nf();
+  /* beyond the map: a patchwork tile that repeats to the horizon (no landmarks in it, so the repeat doesn't show) */
+  {const n=1024,mpp=2.5,M=n*mpp,c=document.createElement('canvas');c.width=c.height=n;const x=c.getContext('2d');seed(1330);
+    x.fillStyle=PAPER;x.fillRect(0,0,n,n);x.globalCompositeOperation='multiply';wash(x,rectP(-40,-40,n+40,n+40,.2),'#CFE0AA',{layers:10,alpha:.05,amt:.2});
+    const leaves=[],split=(x0,y0,x1,y1,d)=>{const w=x1-x0,h=y1-y0;if(d>4||w*h<rnd(14000,42000)){leaves.push([x0,y0,x1,y1]);return}
+      if(w>h*rnd(.7,1.3)){const s=x0+w*rnd(.32,.68);split(x0,y0,s,y1,d+1);split(s,y0,x1,y1,d+1)}else{const s=y0+h*rnd(.32,.68);split(x0,y0,x1,s,d+1);split(x0,s,x1,y1,d+1)}};
+    split(0,0,M,M,0);const L=[];
+    for(const [x0,y0,x1,y1] of leaves){const q=[[x0+5,y0+5],[x1-5,y0+5],[x1-5,y1-5],[x0+5,y1-5]].map(([a,b])=>({x:a/mpp,y:b/mpp,v:.2})),plow=R()<.12;
+      wash(x,q,plow?'#C7A77A':pal[Math.floor(R()*pal.length)],{layers:7,alpha:.07,amt:.2});
+      for(let e=0;e<4;e++)if(R()<.7)S(L,kline(q[e].x,q[e].y,q[(e+1)%4].x,q[(e+1)%4].y,1),'#86A266',2.5)}
+    for(let k=0;k<10;k++){const wx=rnd(80,n-80),wy=rnd(80,n-80);wash(x,ellipsePoly(wx,wy,rnd(15,40),rnd(12,30),12,.5),'#7FA466',{layers:8,alpha:.08})}
+    const lc=document.createElement('canvas');lc.width=lc.height=n;const lx=lc.getContext('2d');drawItems(lx,L,0,0,1,0,0);toothOn(lx,n,n);
+    x.globalCompositeOperation='source-over';x.drawImage(lc,0,0);granulate(x,n,n);FL.fieldTile=c;FL.tileMpp=mpp}
+  fadeEdges(FL.field,.12);fadeEdges(FL.fieldL,.12);
+  /* cloud shadows: soft blue-grey blotches on a long period of their own, multiplied over the ground, so the patchwork's repeat never lines up */
+  {const n=256,c=document.createElement('canvas');c.width=c.height=n;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,n,n);seed(1340);
+    for(let k=0;k<11;k++){const bx=rnd(0,n),by=rnd(0,n),r=rnd(18,46),a=rnd(.25,.5);for(const ox of [-n,0,n])for(const oy of [-n,0,n]){const g=x.createRadialGradient(bx+ox,by+oy,0,bx+ox,by+oy,r);g.addColorStop(0,`rgba(120,138,160,${a})`);g.addColorStop(1,'rgba(120,138,160,0)');x.fillStyle=g;x.fillRect(bx+ox-r,by+oy-r,r*2,r*2)}}
+    FL.groundShade=c}
+  await nf();
+  /* the hills along the horizon: a far blue-grey ridge, a near green one */
+  {const c=document.createElement('canvas');c.width=2400;c.height=300;const x=c.getContext('2d');
+    const ridge=(base,amp,fr,ph)=>{const p=[];for(let i=0;i<=24;i++){const X=-100+i*110;p.push({x:X,y:base-amp*(.55+.45*Math.sin(X/fr+ph))-rnd(0,amp*.2),v:.25})}p.push({x:2500,y:330,v:.1},{x:-100,y:330,v:.1});return p};
+    wash(x,ridge(250,130,240,1),'#B4C6D2',{layers:12,alpha:.07,amt:.18});wash(x,ridge(285,85,180,2.6),'#A3BE93',{layers:14,alpha:.08,amt:.18});FL.hills=c}
+  /* the sky above the cloud: summer blue → a blue deeper than any blue → violet → the black (no moon in it: the moon is waiting behind the earth) */
+  /* (one smooth gradient, the watercolour only as soft blooms inside it, so it never reads as stripes) */
+  {const c=document.createElement('canvas');c.width=960;c.height=2160;const x=c.getContext('2d'),g=x.createLinearGradient(0,0,0,2160);
+    [[0,'#05071A'],[.1,'#0B0F2C'],[.2,'#1D1B4E'],[.3,'#3B2F78'],[.4,'#3E4AA6'],[.5,'#2F62C6'],[.62,'#4A86DA'],[.75,'#7EB0EC'],[.88,'#A8CBF2'],[1,'#C9DFF6']].forEach(([o,cl])=>g.addColorStop(o,cl));
+    x.fillStyle=g;x.fillRect(0,0,960,2160);x.save();x.scale(.5,.5);seed(1320);
+    for(const [Y,col] of [[300,'#2A1F5E'],[700,'#4A3C8E'],[1100,'#3256B8'],[1500,'#2F6BCB'],[1900,'#5A92DE'],[2500,'#8DB8EE'],[3200,'#B3D0F4']])
+      for(let k=0;k<3;k++){wash(x,ellipsePoly(rnd(0,1920),Y+rnd(-150,150),rnd(400,800),rnd(120,260),14,.6),col,{layers:10,alpha:.045,amt:.4});await nf()}
+    x.restore();granulate(x,960,2160);FL.deep=c}
+  const ink='#3E3A48',skin='#F1CFB0';let L;
+  /* Mother: blue dress, a hand up against the sun (feet at 0,0; 1 unit = 1 cm) */
+  seed(860);L=[];{const dr=polyP([[-15,-122],[15,-122],[32,-40],[-32,-40]],.05);F(L,dr,.9,7,'#4D6FB8',7);S(L,densify(dr,6,true),ink,4);
+    S(L,kline(-9,-40,-10,-3,1),ink,5);S(L,kline(9,-40,10,-3,1),ink,5);S(L,kline(-17,-2,-5,-2,.5),ink,5);S(L,kline(5,-2,17,-2,.5),ink,5);
+    const hd=ellipsePoly(0,-140,15,16,10,.08);F(L,hd,.4,4,skin,6);S(L,densify(hd,4,true),ink,4);
+    F(L,polyP([[-17,-140],[-14,-157],[0,-162],[14,-157],[17,-140],[10,-150],[-10,-150]],.04),.2,4,'#5B3B2C',6);S(L,kline(-15,-146,-21,-114,1),'#5B3B2C',6);
+    S(L,kline(14,-118,30,-136,1),ink,5);S(L,kline(30,-136,6,-151,1),ink,5);S(L,kline(-14,-116,-24,-76,1),ink,5)}
+  FL.mom=L;
+  /* Grandfather: brown coat, white hair, a stick */
+  seed(861);L=[];{const ct=polyP([[-16,-118],[16,-118],[22,-44],[-22,-44]],.05);F(L,ct,.9,7,'#7B5B3F',7);S(L,densify(ct,6,true),ink,4);
+    S(L,kline(-8,-44,-9,-3,1),ink,5);S(L,kline(8,-44,9,-3,1),ink,5);
+    const hd=ellipsePoly(0,-134,13,14,10,.08);F(L,hd,.4,4,skin,6);S(L,densify(hd,4,true),ink,4);
+    S(L,[{x:-14,y:-138},{x:-8,y:-148},{x:0,y:-150},{x:8,y:-148},{x:14,y:-138}],'#F4F2EC',6);
+    S(L,kline(16,-110,28,-62,1),ink,4);S(L,kline(28,-62,30,-2,1),'#5A4632',4)}
+  FL.gpa=L;
+  /* Cus, from behind and from the front — yellow fur, white hoodie, black shorts, the bag across him, the big tail with its white tip (feet at 0,0) */
+  const fur='#F3C93F',furD='#C99A1C',blk='#2C2C33',wht='#F6F4EE',gry='#8A8896';
+  const legs=L=>{S(L,kline(-9,-38,-10,-9,1),fur,9);S(L,kline(9,-38,10,-9,1),fur,9);
+    for(const sx of [-11,11]){const s=ellipsePoly(sx,-5,11,6,8,.1);F(L,s,.2,4,wht,5);S(L,densify(s,4,true),blk,4)}
+    F(L,polyP([[-21,-66],[21,-66],[24,-34],[3,-34],[0,-46],[-3,-34],[-24,-34]],.04),.3,5,blk,6)};
+  const shirt=polyP([[-22,-114],[22,-114],[32,-96],[25,-90],[23,-62],[-23,-62],[-25,-90],[-32,-96]],.04);
+  const ears=L=>{for(const sx of [-1,1]){const e=polyP([[sx*21,-148],[sx*17,-176],[sx*6,-154]],.02);F(L,e,.2,3,fur,6);S(L,densify(e,3,true),furD,4)}};
+  seed(870);L=[];legs(L);F(L,shirt,1.2,6,wht,7);S(L,densify(shirt,5,true),gry,4);S(L,arcP(0,-112,15,8,0,Math.PI,10),gry,4);
+  S(L,kline(-27,-100,-31,-70,1),fur,9);S(L,kline(27,-100,31,-70,1),fur,9);
+  S(L,kline(17,-112,-19,-72,1),blk,5);F(L,polyP([[-29,-80],[-13,-80],[-13,-64],[-29,-64]],.03),.3,4,blk,6);
+  {const tail=polyP([[2,-58],[22,-66],[42,-86],[50,-112],[42,-120],[34,-102],[18,-82],[0,-68]],.06);F(L,tail,.7,6,fur,8);S(L,densify(tail,5,true),furD,4);
+    F(L,polyP([[44,-104],[50,-112],[42,-120],[37,-110]],.02),.2,3,wht,6)}
+  {const hd=ellipsePoly(0,-136,23,22,12,.12);F(L,hd,.5,5,fur,8);S(L,densify(hd,4,true),furD,4);
+    S(L,[{x:-15,y:-150},{x:-10,y:-161},{x:-5,y:-151},{x:0,y:-163},{x:5,y:-151},{x:11,y:-160},{x:16,y:-149}],furD,4)}
+  /* in chapter 2 he has his flying cap on: the same back, the cap over his head (ears through it), goggles' band, straps lying on his shoulders */
+  const capped=[...L];{const sv=R;seed(873);const cap=[];for(let q=0;q<=12;q++){const a=Math.PI+q/12*Math.PI;cap.push({x:Math.cos(a)*25,y:-134+Math.sin(a)*25,v:.05})}cap.push({x:23,y:-128,v:.05},{x:-23,y:-128,v:.05});
+    F(capped,cap,.9,4,CAP,6);S(capped,densify(cap,4,true),CAP_D,3);S(capped,[{x:-25,y:-140},{x:0,y:-136},{x:25,y:-140}],'#3A3A44',4);
+    S(capped,densify([{x:-20,y:-128},{x:-25,y:-118},{x:-30,y:-108}],3),CAP_D,4);S(capped,densify([{x:20,y:-128},{x:26,y:-117},{x:33,y:-109}],3),CAP_D,4);R=sv}
+  ears(capped);FL.cusBackCap=capped;
+  ears(L);FL.cusBack=L;
+  seed(871);L=[];
+  {const tl=polyP([[-2,-58],[-22,-66],[-42,-86],[-50,-112],[-42,-120],[-34,-102],[-18,-82],[0,-68]],.06);F(L,tl,.7,6,fur,8);S(L,densify(tl,5,true),furD,4);
+    F(L,polyP([[-44,-104],[-50,-112],[-42,-120],[-37,-110]],.02),.2,3,wht,6)}
+  legs(L);F(L,shirt,1.2,6,wht,7);S(L,densify(shirt,5,true),gry,4);S(L,kline(8,-112,8,-64,.5),fur,5);
+  S(L,kline(-27,-100,-31,-70,1),fur,9);S(L,kline(27,-100,31,-70,1),fur,9);
+  S(L,kline(-17,-112,19,-72,1),blk,5);F(L,polyP([[13,-80],[29,-80],[29,-64],[13,-64]],.03),.3,4,blk,6);
+  {const hd=ellipsePoly(0,-136,23,22,12,.12);F(L,hd,.5,5,fur,8);S(L,densify(hd,4,true),furD,4);
+    const mz=ellipsePoly(0,-127,11,8,10,.05);F(L,mz,.3,3,wht,5);
+    S(L,kcircle(-8,-140,2.6,1.4),blk,4);S(L,kcircle(8,-140,2.6,1.4),blk,4);S(L,arcP(0,-128,6,5,.25,Math.PI-.25,8),'#B4553E',3);
+    S(L,[{x:-15,y:-150},{x:-9,y:-158},{x:-4,y:-149},{x:1,y:-159},{x:6,y:-149},{x:12,y:-157},{x:16,y:-148}],furD,4)}
+  ears(L);FL.cusFront=L;
+  /* the glider parked: the side view, nobody in it, standing on its two wheels */
+  seed(809);L=[];{const gk='#2F3036';
+    const wing=polyP([[-232,-16],[232,-24],[234,-8],[-230,0]],.05);F(L,wing,.1,11,'#F7D66E',6);S(L,densify(wing,6,true),gk,4);
+    const body=polyP([[-92,6],[40,-12],[98,4],[44,22],[-82,18]],.05);F(L,body,.25,8,SUN,7);S(L,densify(body,6,true),gk,5);
+    S(L,kline(-86,8,-116,-36,1),gk,5);S(L,kline(-116,-36,-76,-30,1),gk,4);S(L,kline(-60,-6,-30,12,1),gk,4);S(L,kline(70,-14,40,10,1),gk,4);
+    S(L,arcP(14,-10,22,12,Math.PI*1.05,Math.PI*1.95,10),gk,4);S(L,kline(104,-16,104,24,1),gk,4);S(L,kline(90,4,118,4,1),gk,4);
+    S(L,kline(-40,20,-44,38,1),gk,4);S(L,kcircle(-44,43,6,1.2),gk,4);S(L,kline(40,20,44,38,1),gk,4);S(L,kcircle(44,43,6,1.2),gk,4)}
+  FL.gliderPark=L;
+}
+/* ---- the grand view's pieces: rocks as little crayon sprites (3 boil frames each), the band ahead of him, the moon's orbit round the earth, glows ---- */
+/* a rock as he would colour it, but grown up a little: a grey-brown body, a crater or two, a light rim on the sun side and a shadow away from it */
+const ROCK_COLS=['#8E8B96','#A29C93','#7C8597','#9B8E84','#B2ADA6','#6F7584','#A49A8C','#8D97A7','#9AA3C4','#B3A1B6'];
+function makeRock(k,px){seed(900+k);const L=[],r=27,poly=ellipsePoly(36,36,r*rnd(.82,1),r*rnd(.6,.86),9,.7),col=ROCK_COLS[k%ROCK_COLS.length];
+  F(L,poly,rnd(0,3),4,col,7);
+  for(let q=0;q<1+(k%3);q++){const a=rnd(0,6.28),d=rnd(0,r*.42);S(L,kcircle(36+Math.cos(a)*d,36+Math.sin(a)*d*.7,rnd(2.5,5),1.1),'#5D5F6E',2)}
+  S(L,densify(poly,4,true),'#DCD9E6',2.5);
+  const s=px/72;
+  return[0,1,2].map(v=>{const c=document.createElement('canvas');c.width=c.height=px;const x=c.getContext('2d');drawItems(x,L,0,0,s,0,v);
+    x.globalCompositeOperation='source-atop';const g=x.createRadialGradient(22*s,20*s,3*s,40*s,46*s,38*s);
+    g.addColorStop(0,'rgba(255,248,236,.42)');g.addColorStop(.42,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(12,14,36,.66)');x.fillStyle=g;x.fillRect(0,0,px,px);
+    x.globalCompositeOperation='source-over';toothOn(x,px,px);return c})}
+async function buildGrand(){
+  const cols=ROCK_COLS;
+  FL.rockSpr=[];for(let k=0;k<16;k++)FL.rockSpr.push(makeRock(k,72));
+  FL.bigRock=[];for(let k=0;k<6;k++)FL.bigRock.push(makeRock(20+k,300));
+  await nf();
+  seed(950);
+  /* stars on their own (no labels, no belt): the grand view has no handwriting in it */
+  FL.starItems=[];const sc=['#FFFDF4','#FFFDF4','#FFFDF4','#FFFDF4','#F7C6E0','#B8F0E6','#D6CCFF','#FBE3A4'];
+  for(let i=0;i<230;i++){const sx=rnd(0,1920),sy=rnd(0,1080),s=Math.pow(R(),2.2)*6+1.2,col=sc[i%sc.length];S(FL.starItems,[{x:sx-s,y:sy},{x:sx+s,y:sy}],col,s>4.2?4:2.5);if(s>4.2)S(FL.starItems,[{x:sx,y:sy-s},{x:sx,y:sy+s}],col,3)}
+  /* the band ahead of him, looking away from the earth: fewer rocks, bigger, and the colour of rock */
+  FL.beltRocks=Array.from({length:230},()=>({dw:.35+Math.pow(R(),1.6)*85,u:gauss()*.6,h:gauss()*.05,s:rnd(.06,.26),k:Math.floor(R()*16),col:cols[Math.floor(R()*cols.length)]})).sort((a,b)=>b.dw-a.dw);
+  /* the moon's tail: rocks all round the orbit, each with its own pace */
+  FL.ringRocks=Array.from({length:300},(_,n)=>({th:n%4<1?1.5708+gauss()*1.1:R()*6.2832,dr:gauss()*.035,dy:gauss()*.012,s:rnd(.5,1.5),w:rnd(.75,1.25),k:Math.floor(R()*16)}));
+  /* the big ones round him in the foreground: the near side of the same orbit, so they drift the same way (right to left), the nearest fastest */
+  FL.footRocks=[[80,1000,220],[380,1080,300],[820,1010,170],[1080,1120,340],[1320,990,150],[1760,1060,260],[2140,1000,200]].map(([x,y,s],i)=>({x,y,s,k:(i+2)%6,p:R()*6.28,sp:s*.06}));
+  /* the far sky of the grand view, flattened once: the dark, a dust of tiny stars, and the milky way running low-left to high-right behind the earth */
+  {const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');x.drawImage(FL.space,0,0,W,H);
+    for(let i=0;i<1600;i++){const b=Math.pow(R(),3);x.fillStyle=`rgba(255,${235+R()*20|0},${225+R()*30|0},${(.18+.6*b).toFixed(2)})`;const z=b>.75?1.7:1;x.fillRect(rnd(0,W),rnd(0,H),z,z)}
+    const m=document.createElement('canvas');m.width=W;m.height=H;const mx=m.getContext('2d'),ang=-.4,ca=Math.cos(ang),sa=Math.sin(ang),c0={x:980,y:600};
+    const at=(u,w)=>({x:c0.x+ca*u-sa*w,y:c0.y+sa*u+ca*w});
+    const ell=(u,w,rx,ry,v=.5)=>{const p=at(u,w);return ellipsePoly(0,0,rx,ry,14,v).map(q=>({x:p.x+q.x*ca-q.y*sa,y:p.y+q.x*sa+q.y*ca,v:q.v}))};
+    mx.globalCompositeOperation='lighter';
+    for(const [col,wd,a] of [['#26296A',190,.05],['#45337E',120,.05],['#1C5872',90,.04],['#73396F',70,.035],['#8C6A5A',50,.03]])
+      for(let k=0;k<9;k++)wash(mx,ell(-1350+k*340+rnd(-70,70),gauss()*24,rnd(240,420),wd*rnd(.7,1.25)),col,{layers:9,alpha:a,amt:.4});
+    for(let i=0;i<6500;i++){const u=rnd(-1400,1400),w=gauss()*(80+40*Math.sin(u/230)),p=at(u,w),b=Math.pow(R(),3);
+      mx.fillStyle=`rgba(${225+R()*30|0},${220+R()*35|0},255,${(.12+.62*b).toFixed(2)})`;const z=b>.7?1.8:1.05;mx.fillRect(p.x,p.y,z,z)}
+    mx.globalCompositeOperation='destination-out';for(let k=0;k<7;k++)wash(mx,ell(-1000+k*320,rnd(-26,26),rnd(140,260),rnd(16,30)),'#000',{layers:8,alpha:.07,amt:.5}); // dust lanes
+    x.drawImage(m,0,0);FL.spaceGrand=c;
+    const g=document.createElement('canvas');g.width=480;g.height=270;const gx=g.getContext('2d');gx.filter='blur(7px)';gx.drawImage(m,0,0,480,270);gx.filter='none';FL.milkyGlow=g}
+  await nf();
+  /* the earth's own light: a soft ring of air round the limb */
+  {const r=E2.r,S2=Math.ceil(r*3.2),c=document.createElement('canvas');c.width=c.height=S2;const x=c.getContext('2d'),o=S2/2,g=x.createRadialGradient(o,o,r*.86,o,o,r*1.6);
+    g.addColorStop(0,'rgba(120,170,255,0)');g.addColorStop(.12,'rgba(150,200,255,.55)');g.addColorStop(.3,'rgba(120,150,255,.22)');g.addColorStop(.6,'rgba(140,100,220,.08)');g.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=g;x.fillRect(0,0,S2,S2);FL.earthGlow={can:c,S:S2}}
+}
+function moonAt(u){const a=(1-u)*(1-u),b=2*u*(1-u),c=u*u;return{x:a*MOON0.x+b*MOON1.x+c*MOON2.x,y:a*MOON0.y+b*MOON1.y+c*MOON2.y}}
+const BGS={};let bgReady=false;
+async function buildBGs(){
+  const blue='#36539A',red='#B4553E',yel='#F2A766',amber='#E58A55',grn='#5F8050',brn='#7B5B3F',gray='#4E4D58',ink='#2F3036';
+  /* Cus's room, a July afternoon */
+  seed(301);let L=[];
+  const room=await paintBase([
+    [bandPoly(-320,840,10,.5),'#F6E4D2',{layers:22,alpha:.03}],   // wall and floor overlap, so no paper gap shows between them
+    [bandPoly(640,1240,10,.3),'#E8D0AE',{layers:24,alpha:.04,amt:.3}],
+    [rectP(1180,150,1640,520),'#D3E4F7',{layers:18,alpha:.035,amt:.12}],
+    [polyP([[1010,790],[1480,790],[1700,1010],[1160,1010]]),'#FBEFC2',{layers:20,alpha:.04,amt:.2}],
+    [rectP(180,610,1070,860,.25),'#C9D8EE',{layers:22,alpha:.04,amt:.25}],
+  ]);
+  box(L,1180,150,1640,520,blue,6);S(L,kline(1410,152,1410,518,1),blue,5);S(L,kline(1182,335,1638,335,1),blue,5);
+  for(let i=0;i<3;i++)S(L,kline(1150-i*14,140,1146-i*14,560,4),red,5);
+  S(L,bird(1300,250,18),gray,4);S(L,bird(1350,232,12),gray,3);
+  S(L,kline(150,490,156,880,2),brn,8);S(L,kline(170,600,1080,606),brn,6);S(L,kline(1080,606,1078,870),brn,6);S(L,kline(170,866,1082,872),brn,6);
+  F(L,rectP(176,612,1074,862),-.35,16,'#5B7FC4',5);
+  box(L,214,552,486,648,gray,4);
+  S(L,densify([{x:300,y:590},{x:380,y:578},{x:380,y:632},{x:300,y:644},{x:300,y:590}],6),ink,4);S(L,densify([{x:380,y:578},{x:460,y:590},{x:460,y:644},{x:380,y:632}],6),ink,4);
+  for(let i=0;i<3;i++){S(L,kline(312,602+i*12,368,594+i*12,.5),gray,2);S(L,kline(392,594+i*12,448,602+i*12,.5),gray,2)}
+  box(L,560,200,900,420,blue,4);S(L,kline(600,330,860,290,2),SUN,7);S(L,kline(700,315,760,360,1.5),SUN,6);S(L,kline(730,300,736,350,1),ink,3);
+  handText(L,'滑翔机',610,400,34,ink);
+  [[1120,930],[1200,946]].forEach(([x,y])=>S(L,densify([{x,y},{x:x+60,y:y-6},{x:x+74,y:y+10},{x:x+4,y:y+16},{x,y}],6),red,5));
+  for(const y of [900,962,1024])S(L,kline(-20,y,1940,y+4,2),'#B9976E',3);
+  /* more of his room (its own seed, so the strokes above keep their shape): a bookshelf on legs, the desk under the window with a lamp,
+     a cup of crayons and a model glider, a clock, star stickers over the bed, a rug, a branch outside — and a tower of blocks on the floor */
+  seed(401);
+  box(L,1690,250,1880,770,brn,5);for(const y of [380,510,640])S(L,kline(1692,y,1878,y,1),brn,4);S(L,kline(1698,770,1700,842,.5),brn,5);S(L,kline(1872,770,1870,842,.5),brn,5);
+  for(const [y0,y1] of [[262,378],[392,508],[522,638],[652,768]]){let x=1700;while(x<1858){const w=rnd(14,26),h=rnd(.68,1)*(y1-y0-8),c=['#B4553E','#36539A','#F2A766','#5F8050','#9C8FE0','#E79AC1'][Math.floor(R()*6)];
+    if(R()<.86){F(L,rectP(x,y1-h,x+w,y1-2,.05),1.4,5,c,5);box(L,x,y1-h,x+w,y1-2,ink,2)}x+=w+rnd(1,5)}}
+  S(L,kline(1760,250,1758,226,1),grn,4);F(L,ellipsePoly(1758,212,26,17,10,.2),.5,6,grn,5);S(L,kcircle(1758,212,26,1.1),grn,4);box(L,1740,232,1780,252,red,4);
+  S(L,kline(1176,650,1670,654,1.5),brn,6);S(L,kline(1200,654,1204,900,1),brn,5);S(L,kline(1646,654,1650,900,1),brn,5);box(L,1440,662,1620,742,brn,4);S(L,kline(1510,702,1550,702,.5),brn,3);
+  S(L,kline(1600,650,1600,566,1),ink,4);S(L,kline(1600,566,1566,528,1),ink,4);{const sh=polyP([[1528,524],[1596,500],[1590,560]],.05);F(L,sh,.4,5,SUN,6);S(L,densify(sh,5,true),ink,3)}
+  S(L,kline(1262,612,1424,598,1),SUN,6);S(L,kline(1322,618,1374,630,1),SUN,5);S(L,kline(1342,606,1346,648,1),ink,3);
+  box(L,1212,600,1244,648,blue,3);for(let k=0;k<4;k++)S(L,kline(1216+k*7,600,1212+k*9,572-k*3,.5),['#B4553E','#F2A766','#5F8050','#36539A'][k],4);
+  S(L,kcircle(1030,176,38,1.2),ink,4);S(L,kline(1030,176,1030,150,.5),ink,4);S(L,kline(1030,176,1050,184,.5),ink,4);
+  [[170,330],[260,280],[350,340],[440,295],[505,352]].forEach(([x,y])=>S(L,kstar(x,y,14),SUN_D,4));
+  {const rug=ellipsePoly(640,968,300,66,16,.15);F(L,rug,.25,11,'#E79AC1',6);S(L,kellipse(640,968,300,66),red,4);for(let k=0;k<12;k++)S(L,kline(360+k*52,1036,358+k*52,1050,.5),red,3)}
+  {const bc=['#B4553E','#F2A766','#36539A','#5F8050','#E79AC1'];let by=1062;for(let k=0;k<5;k++){const w=rnd(54,70),h=rnd(38,46),x0=1462+rnd(-8,8);F(L,rectP(x0,by-h,x0+w,by,.05),.7+k,6,bc[k],6);box(L,x0,by-h,x0+w,by,ink,3);by-=h}}
+  S(L,kline(1640,230,1470,290,2),brn,6);F(L,ellipsePoly(1500,250,74,40,12,.4),.5,8,grn,5);S(L,kcircle(1500,250,60,1.15),grn,4);
+  BGS.room={base:room,items:L};await nf();
+  /* the town street, early evening */
+  seed(302);L=[];
+  const street=await paintBase([
+    [bandPoly(-320,540,10,.6),'#CADDF2',{layers:22,alpha:.035}],
+    [bandPoly(280,640,10,.6),'#F8E3CE',{layers:18,alpha:.026}],
+    [bandPoly(500,720,10,.35),'#C9D7BF',{layers:20,alpha:.04,amt:.35}],
+    [bandPoly(640,1240,10,.3),'#C2D5A8',{layers:24,alpha:.045,amt:.3}],
+    [polyP([[930,610],[990,610],[1120,1090],[800,1090]]),'#E4DACB',{layers:22,alpha:.05,amt:.12}],
+  ]);
+  [[150,red],[430,blue],[1250,red],[1540,blue]].forEach(([x,c])=>{box(L,x,470,x+220,620,blue,5);S(L,kline(x-16,474,x+110,390),c,6);S(L,kline(x+110,390,x+236,474),c,6);F(L,rectP(x+30,510,x+80,560),.6,7,yel,5);box(L,x+30,510,x+80,560,blue,3);S(L,kline(x+140,620,x+140,560),blue,4);S(L,kline(x+140,560,x+182,560),blue,4);S(L,kline(x+182,560,x+182,620),blue,4)});
+  S(L,kline(-20,622,1940,618,3),grn,5);
+  for(let i=0;i<26;i++){const u=i/26,y=630+u*u*450,w=30+u*130;S(L,kcircle(960+(i%2?1:-1)*rnd(0,w*.6),y,6+u*16,1.05),gray,3)}
+  S(L,kline(1180,640,1176,330,1.5),ink,5);S(L,kcircle(1178,320,14,1.3),amber,5);
+  for(let x=-10;x<1940;x+=rnd(40,80)){const y=rnd(700,1060);if(Math.abs(x-960)<180)continue;S(L,[{x,y},{x:x+5,y:y-14},{x:x+10,y},{x:x+15,y:y-11},{x:x+20,y}],grn,4)}
+  S(L,bird(700,180,20),gray,4);S(L,bird(760,160,13),gray,3);
+  /* more of the street: far hills, trees between the houses, picket fences, chimney smoke, wires with birds sitting on them, a cat on a fence, flowers, evening clouds */
+  seed(402);
+  S(L,resample(catmull([[-20,474],[300,436],[640,458],[980,424],[1300,452],[1640,428],[1940,452]].map(([x,y])=>({x,y})),10),6),'#7E9E8A',4);
+  for(const [tx,r] of [[60,70],[800,56],[1110,52],[1880,64]]){S(L,kline(tx,622,tx+2,622-r*1.2,1.5),brn,6);F(L,ellipsePoly(tx,622-r*1.9,r,r*.9,10,0),.4,8,grn,6);S(L,kcircle(tx,622-r*1.9,r+3,1.2),grn,5)}
+  for(const [a,b] of [[130,680],[1230,1790]]){S(L,kline(a,604,b,606,1),'#F7F3EA',5);for(let x=a;x<=b;x+=22)S(L,kline(x,636,x+1,592,.5),'#F7F3EA',5)}
+  for(const hx of [150,1540]){box(L,hx+150,404,hx+174,446,red,4);S(L,resample(catmull([[hx+162,398],[hx+150,368],[hx+176,340],[hx+158,310],[hx+182,282]].map(([x,y])=>({x,y})),8),5),'#C9C3D2',4)}
+  S(L,kline(110,640,114,236,1.5),brn,6);S(L,kline(1810,640,1806,236,1.5),brn,6);S(L,kline(90,250,138,250,.5),brn,4);S(L,kline(1786,250,1834,250,.5),brn,4);
+  for(const o of [0,24]){const w=[];for(let i=0;i<=40;i++){const x=114+(1806-114)*i/40;w.push({x,y:250+o+96*(1-Math.pow((x-960)/846,2))})}S(L,w,'#4A4A55',2.5)}
+  for(const bx of [520,560,1340]){const y=250+96*(1-Math.pow((bx-960)/846,2))-8;S(L,kcircle(bx,y,7,1.2),'#4A4A55',4);S(L,kcircle(bx+8,y-6,4,1.2),'#4A4A55',3)}
+  {const cx=1330,cy=578;F(L,ellipsePoly(cx,cy,20,12,8,.1),.3,4,'#3A3740',6);S(L,kcircle(cx+20,cy-12,9,1.2),'#3A3740',5);S(L,[{x:cx+14,y:cy-18},{x:cx+16,y:cy-30},{x:cx+22,y:cy-20}],'#3A3740',4);S(L,[{x:cx+22,y:cy-20},{x:cx+28,y:cy-31},{x:cx+30,y:cy-17}],'#3A3740',4);S(L,resample(catmull([[cx-18,cy+4],[cx-34,cy+20],[cx-30,cy+42]].map(([x,y])=>({x,y})),8),4),'#3A3740',4)} // a cat on the fence
+  for(let i=0;i<40;i++){const x=rnd(140,1790),y=rnd(612,690);if(x>680&&x<1230)continue;S(L,kcircle(x,y,rnd(3,6),1.1),['#E79AC1','#F6E27A','#FBF8F0','#B4553E'][i%4],3)}
+  S(L,arcP(380,190,150,42,Math.PI*1.05,Math.PI*1.95,14),'#F2A766',4,{grp:'dusk'});S(L,arcP(470,180,90,40,Math.PI*1.1,Math.PI*1.9,10),'#F2A766',4,{grp:'dusk'});S(L,arcP(1520,150,130,36,Math.PI*1.05,Math.PI*1.95,14),'#E9A9C0',4,{grp:'dusk'}); // evening cloud edges: the street by day only
+  BGS.street={base:street,items:L};await nf();
+  /* November slope at sunset, the glider tipped onto one wing */
+  seed(303);L=[];
+  const slope=await paintBase([
+    [bandPoly(-320,240,10,.6),'#E9C8D0',{layers:14,alpha:.024}],
+    [bandPoly(-320,540,10,.6),'#F8D3B8',{layers:18,alpha:.03}],
+    [bandPoly(320,760,10,.6),'#FBE0C4',{layers:16,alpha:.028}],
+    [ellipsePoly(620,330,190,62,12,.6),'#FCE6CA',{layers:16,alpha:.06,amt:.3}],
+    [ellipsePoly(1020,250,160,52,12,.6),'#FCE6CA',{layers:16,alpha:.06,amt:.3}],
+    [ellipsePoly(1460,520,112,108,14,.5),'#F4A66C',{layers:28,alpha:.05,amt:.3}],
+    [polyP([[-320,1240],[-320,1000],[1500,690],[2240,760],[2240,1240]],.3),'#E6D7A8',{layers:20,alpha:.04,amt:.25}],
+    [polyP([[-320,1240],[-320,1080],[1500,800],[2240,860],[2240,1240]],.3),'#D6C391',{layers:14,alpha:.03,amt:.25}],
+  ]);
+  S(L,arcP(620,338,190,52,.1,Math.PI-.1),amber,4);S(L,arcP(1020,258,160,44,.1,Math.PI-.1),amber,4);
+  S(L,kline(-20,1012,1500,694,3),'#9C7A3E',6);S(L,kline(1500,694,1940,760,2),'#9C7A3E',6);
+  for(let i=0;i<40;i++){const x=rnd(-10,1930),y=(x<1500?1012-(x+20)/1520*318:694+(x-1500)/440*66)+rnd(10,300);S(L,kline(x,y,x+rnd(-6,10),y-rnd(16,34),1),'#A88A4E',3)}
+  const gl=polyP([[1010,690],[1210,660],[1250,690],[1060,730]]);F(L,gl,.2,9,SUN,7);S(L,densify(gl,6,true),ink,5);
+  S(L,kline(860,792,1580,610,3),ink,7);S(L,kline(1060,700,1070,760,1),ink,4);S(L,kline(1180,672,1186,738,1),ink,4);S(L,kcircle(1262,688,16,1.2),ink,4);
+  for(let i=0;i<9;i++){S(L,kline(1600+i*36,620,1640+i*36,760,1),gray,2);S(L,kline(1640+i*36,620,1600+i*36,760,1),gray,2)}
+  S(L,kline(1590,620,1930,624,1),gray,3);
+  /* more of November: a bare tree against the sunset, birds going home, gold on the cloud edges, fallen leaves in the dry grass */
+  seed(403);
+  S(L,kline(420,914,428,690,2),'#6E5440',7);[[428,770,350,700],[426,730,492,656],[428,706,402,640],[427,748,522,716],[398,668,372,636],[480,664,502,630],[352,702,330,680]].forEach(([a,b,c,d])=>S(L,kline(a,b,c,d,1.5),'#6E5440',4));
+  for(const [bx,by,s] of [[1170,430,16],[1220,410,11],[1262,438,9],[1310,398,8],[1350,420,7]])S(L,bird(bx,by,s),gray,3);
+  S(L,arcP(300,470,170,40,.15,Math.PI-.15),'#F2B451',4);S(L,arcP(1700,300,150,36,.15,Math.PI-.15),'#F2B451',4);S(L,arcP(860,180,120,30,.15,Math.PI-.15),'#F2B451',3);
+  for(let i=0;i<60;i++){const x=rnd(-10,1500),y=1012-(x+20)/1520*318+rnd(20,330);S(L,kcircle(x,y,rnd(3,6),1.1),['#C8692E','#B4553E','#E0A040'][i%3],3)}
+  BGS.slope={base:slope,items:L};await nf();
+  /* chapter 3: the same room, a rainy season later; the folded book under the cabinet */
+  seed(304);L=[];
+  const room3=await paintBase([
+    [bandPoly(-320,840,10,.5),'#E7E2DC',{layers:20,alpha:.03}],
+    [bandPoly(640,1240,10,.3),'#D9CBB4',{layers:22,alpha:.04,amt:.3}],
+    [rectP(1180,150,1640,520),'#C9D3DE',{layers:18,alpha:.04,amt:.12}],
+    [rectP(180,610,1070,860,.25),'#C3CFE0',{layers:18,alpha:.035,amt:.25}],
+  ]);
+  for(let i=0;i<16;i++){const x=rnd(1200,1620),y=rnd(170,480);S(L,kline(x,y,x-14,y+34,.5),'#7E8DA6',2)}
+  const book=polyP([[1560,846],[1764,824],[1786,908],[1578,934]]);F(L,book,.15,8,'#C3CC8C',7);S(L,densify(book,6,true),ink,4);
+  S(L,kline(1600,862,1720,850,1),'#8E9A5E',3);S(L,kline(1604,880,1690,872,1),'#8E9A5E',3);
+  S(L,densify([{x:1578,y:934},{x:1576,y:902},{x:1608,y:930},{x:1578,y:934}],4),ink,3);
+  for(let i=0;i<22;i++){const x=rnd(1500,1840),y=rnd(780,960);S(L,[{x,y},{x:x+1.5,y:y+1}],'#9A9286',3)}
+  /* a season later: the calendar's days crossed off for a while, and then not; grey cloud in the window */
+  seed(404);
+  box(L,960,330,1090,470,ink,3);F(L,rectP(962,332,1088,360,.05),0,6,'#B4553E',5);for(let r=0;r<4;r++)for(let q=0;q<5;q++){const x=972+q*23,y=374+r*22;S(L,kcircle(x+6,y+6,1.5,1),'#9A9286',2);if(r*5+q<9)S(L,[{x,y},{x:x+12,y:y+12}],ink,2)}
+  S(L,arcP(1300,250,110,34,Math.PI*1.05,Math.PI*1.95,12),'#8E97A8',4);S(L,arcP(1520,300,90,30,Math.PI*1.05,Math.PI*1.95,10),'#8E97A8',4);
+  BGS.room3={base:room3,items:[...BGS.room.items,...L]};await nf();
+  /* chapter 4: the dream — a blue too even to be real, clouds with no flaw, birds everywhere, gliders that never look back */
+  seed(305);L=[];
+  const dream=await paintBase([
+    [bandPoly(-320,880,10,.08),'#93B8EC',{layers:10,alpha:.11,amt:.08}],
+    [bandPoly(-320,500,10,.06),'#86ADE8',{layers:8,alpha:.07,amt:.06}],
+    [ellipsePoly(560,330,230,64,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],
+    [ellipsePoly(1380,220,180,52,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],
+    [ellipsePoly(1120,560,260,70,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],
+    [bandPoly(870,1240,10,.02),'#D6D0C4',{layers:10,alpha:.1,amt:.04}],
+    [ellipsePoly(260,180,200,46,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],[ellipsePoly(1700,420,240,58,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],[ellipsePoly(820,700,170,40,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],
+  ]);
+  S(L,kline(-20,872,1940,872,.3),'#7A7468',4);
+  /* the flock and the net are groups: they fade in when the text sees them (dreamA). The flock is gliders — 很多滑翔机，像迁徙的鸟群 */
+  const mini=(x,y,s,vx,grp,ax=x)=>{ /* (one anchor for all three strokes, so a glider never comes apart at the screen edge) */const d=Math.sign(vx)||1;S(L,densify([{x:x-26*s,y:y+3*s},{x:x+26*s,y:y-3*s}],4),'#F8F7F2',3.4*s+2,{vx,grp,ax});S(L,densify([{x:x-26*s,y:y+3*s},{x:x+26*s,y:y-3*s}],4),gray,1.6,{vx,grp,ax});S(L,densify([{x:x-4*s*d,y:y-5*s},{x:x+14*s*d,y:y+2*s}],3),gray,2.4,{vx,grp,ax})};
+  for(let i=0;i<46;i++){const s=rnd(.35,1);rnd(7,22);mini(rnd(-20,1940),rnd(60,780),s,rnd(6,16)*(i%5?1:-1),'birds')}
+  for(let i=0;i<6;i++){const x=rnd(0,1900),y=rnd(120,640),s=rnd(.5,1),dir=i%2?1:-1;
+    const wing=[{x:x-90*s,y:y+8*s},{x:x+90*s,y:y-8*s}],body=[{x:x-10*s*dir,y:y-14*s},{x:x+46*s*dir,y:y+6*s}];
+    const vx=dir*rnd(18,34);S(L,densify(wing,6),'#F8F7F2',9*s+3,{vx,ax:x,grp:'gliders'});S(L,densify(wing,6),gray,2,{vx,ax:x,grp:'gliders'});S(L,densify(body,5),gray,4,{vx,ax:x,grp:'gliders'})}
+  seed(405);
+  /* a migrating flock in Vs, and the ground: too flat, too hard, ruled like a floor */
+  for(const [vx0,vy0,n,sp] of [[200,300,9,10],[1100,180,11,12],[700,520,7,9]])for(let k=0;k<n;k++){const side=k%2?1:-1,d=Math.ceil(k/2);rnd(-2,2);mini(vx0-d*46,vy0+side*d*24,.42,sp,'birds',vx0)} // in Vs, like geese
+  for(let k=-9;k<=9;k++)S(L,kline(960+k*14,876,960+k*240,1100,.4),'#B9B2A6',2);
+  for(let n=0;n<8;n++){const y=872+8*Math.pow(1.62,n);S(L,kline(-20,y,1940,y,.4),'#B9B2A6',2)}
+  BGS.dream={base:dream,items:L};await nf();
+  /* chapter 4, waking: the room before dawn */
+  seed(306);
+  const night=await paintBase([
+    [bandPoly(-320,1240,10,.3),'#5F6E9E',{layers:20,alpha:.06,amt:.2}],
+    [rectP(1180,150,1640,520),'#2E3B66',{layers:16,alpha:.07,amt:.1}],
+    [rectP(180,610,1070,860,.25),'#4C5A86',{layers:14,alpha:.04,amt:.25}],
+  ]);
+  L=[];[[1250,210],[1330,300],[1520,190],[1590,420],[1460,260]].forEach(([x,y])=>S(L,kstar(x,y,7),'#F4F1E6',3));
+  seed(406);{const a=arcP(1300,420,34,34,-1.2,1.9,16),b=arcP(1314,412,28,28,1.7,-1.0,14).reverse();S(L,a,'#F4F1E6',4);S(L,b,'#F4F1E6',3)} // a thin moon, before dawn
+  BGS.night={base:night,items:[...BGS.room.items,...L]};await nf();
+  /* branch A: the walk home, lamps coming on one by one, pools of light on the paving */
+  seed(310);L=[];
+  const stn=await paintBase([
+    [bandPoly(-320,700,10,.5),'#34406A',{layers:22,alpha:.08}],
+    [bandPoly(560,1240,10,.3),'#4A5852',{layers:22,alpha:.07,amt:.3}],
+    [polyP([[930,610],[990,610],[1120,1090],[800,1090]]),'#5E5A57',{layers:16,alpha:.06,amt:.12}],
+  ]);
+  {const x=stn.getContext('2d');x.save();x.scale(.5,.5);[[560,960,170],[1180,930,190],[1560,1000,160]].forEach(([lx,ly,r])=>wash(x,ellipsePoly(lx,ly,r,r*.32,14,.3),'#EAD9B6',{layers:12,alpha:.07,amt:.2}));x.restore()}
+  [[560,560],[1560,600]].forEach(([lx,ly])=>{S(L,kline(lx,960,lx-3,ly,1.5),ink,5);S(L,kcircle(lx-2,ly-12,14,1.3),'#F2A766',5)});
+  /* the stars and the moon are a group: they come out when 云已被吹散，群星渐显 (drawNightLife) */
+  seed(410);for(let i=0;i<26;i++){const x=rnd(40,1880),y=rnd(30,360);S(L,[{x:x-3,y},{x:x+3,y}],'#F4F1E6',3,{grp:'stars'})}
+  {const a=arcP(1650,190,40,40,-1.3,1.8,16),b=arcP(1666,180,33,33,1.6,-1.1,14).reverse();S(L,a,'#F4E6B8',4,{grp:'stars'});S(L,b,'#F4E6B8',3,{grp:'stars'})}
+  BGS.streetnight={base:stn,items:[...BGS.street.items,...L]};await nf();
+  /* branch B: lying on the grass under a lamp too bright for stars */
+  seed(311);L=[];
+  const gn=await paintBase([
+    [bandPoly(-320,760,10,.5),'#2F3B63',{layers:24,alpha:.08}],
+    [bandPoly(420,760,10,.5),'#5D5F86',{layers:14,alpha:.05}],
+    [bandPoly(700,1240,10,.3),'#3F5146',{layers:24,alpha:.07,amt:.3}],
+  ]);
+  {const x=gn.getContext('2d');x.save();x.scale(.5,.5); /* a wet, soft halo: many faint layers, the brightest close to the lamp */
+    [[230,.016],[150,.022],[80,.03]].forEach(([r,a])=>wash(x,ellipsePoly(1556,320,r,r*.92,16,.6),'#E9DCC0',{layers:16,alpha:a,amt:.45}));
+    wash(x,ellipsePoly(1560,940,230,56,14,.5),'#E9DCC0',{layers:12,alpha:.025,amt:.35});x.restore()}
+  S(L,kline(1560,940,1556,330,1.5),ink,6);S(L,kcircle(1556,316,18,1.4),'#F2A766',6);
+  [[120,640],[330,628],[560,646],[860,634]].forEach(([hx,hy])=>{box(L,hx,hy-70,hx+150,hy,'#26304F',4);S(L,kline(hx-10,hy-68,hx+75,hy-120),'#26304F',4);S(L,kline(hx+75,hy-120,hx+160,hy-68),'#26304F',4)});
+  for(let gx=-10;gx<1940;gx+=rnd(22,46)){const gy=rnd(760,1070);S(L,[{x:gx,y:gy},{x:gx+5,y:gy-16},{x:gx+10,y:gy},{x:gx+15,y:gy-12},{x:gx+20,y:gy}],'#2C3A30',4)}
+  /* the stars are behind the lamp's glare; what is left: fireflies, tall grass close by, the town's glow low on the sky */
+  seed(411);
+  for(let i=0;i<24;i++){const x=rnd(60,1860),y=rnd(640,1000);S(L,kcircle(x,y,2.5,1.1),'#F6E27A',4)}
+  for(let gx=-20;gx<1960;gx+=rnd(60,120)){const h=rnd(60,140);S(L,[{x:gx,y:1090},{x:gx+10,y:1090-h},{x:gx+18,y:1090},{x:gx+30,y:1090-h*.7},{x:gx+40,y:1090}],'#1F2A22',6)}
+  S(L,resample(catmull([[-20,690],[400,680],[900,700],[1400,684],[1940,696]].map(([x,y])=>({x,y})),10),6),'#6E6A86',3);
+  BGS.grassnight={base:gn,items:L};await nf();
+  await buildAscent();
+  await buildFlight();
+  bgReady=true;
+}
+/* — index_v8.html L2469 — */
+const slopeY=x=>4040-(x+320)*220/2260;
+/* — index_v8.html L2475 — */
+function drawCloudW(ctx,c,camY,ts){let cx=c.x+c.v*ts;cx=((cx+800)%3520+3520)%3520-800;const cy=c.y-camY;if(cy-c.ch>H||cy+c.ch<0)return;ctx.drawImage(c.can,cx-c.cw/2,cy-c.ch/2,c.cw,c.ch)}
+/* — index_v8.html L2496–2526 — */
+/* ---- chapter 2's flight shots ---- */
+/* draw a list of crayon items under one transform (things that move or scale as a whole) */
+function drawItems(cx,items,ox,oy,s,rot,v){
+  cx.save();cx.translate(ox,oy);if(rot)cx.rotate(rot);if(s!==1)cx.scale(s,s);
+  for(const it of items){const r=mulberry32(it.id*7919+v*104729+1);
+    if(it.k==='f'){cx.save();pathPoly(cx,it.clip,0,0);cx.clip();crayon(cx,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17);cx.restore()}
+    else if(it.k==='t')crayonText(cx,it,r,0,0);
+    else crayon(cx,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17)}
+  cx.restore();
+}
+/* one crayon pass: clear the scratch layer, draw, bite it with the paper tooth, lay it on ctx */
+function crayonPass(ctx,draw,op='source-over'){cctx.clearRect(0,0,W,H);draw(cctx);applyTooth(cctx,cpat,0,0);ctx.globalCompositeOperation=op;ctx.drawImage(ccan,0,0);ctx.globalCompositeOperation='source-over'}
+/* the propeller: a grey blur turning beyond the pod (from behind) or across the nose (from above) */
+function propBlur(cx,x,y,s,rot,f,top){cx.save();cx.translate(x,y);if(rot)cx.rotate(rot);cx.scale(s,s);
+  for(let k=0;k<3;k++){const a=f*1.7+k*2.09,pts=top?arcP(0,-104,60,14,a,a+1.1,8):arcP(0,58,92,82,a,a+.8,10);crayon(cx,pts,'#6B6A74',3,mulberry32(f*7+k),0,0,undefined,k*13+f,.75)}cx.restore()}
+/* he is always in frame: the glider from behind, close, in the middle of the picture, trembling while the fan runs
+   (its pod sits behind the dialogue slip; his head and the wing stay above it) */
+const GL_C={x:960,y:640,s:1.7};
+function flightGlider(ctx,v,now,o={}){
+  const i=o.idx??G.idx,ts=now/1000,eng=o.eng??(i>=5&&i<=12),f=Math.floor(ts*12);
+  const x=(o.x??GL_C.x)+(o.dx||0),y=(o.y??GL_C.y)+(o.dy||0),s=o.s??GL_C.s,rot=(o.rot||0)+(eng?Math.sin(ts*9)*.008:Math.sin(ts*.7)*.012);
+  if(o.a!=null&&o.a<=0)return;const a0=ctx.globalAlpha;if(o.a!=null)ctx.globalAlpha=o.a;
+  crayonPass(ctx,c=>{c.save();if(o.sy&&o.sy!==1){c.translate(x,y);c.scale(1,o.sy);c.translate(-x,-y)}
+    if(eng)propBlur(c,x,y,s,rot,f,false);drawItems(c,o.items||FL.rear,x,y,s,rot,v);c.restore();
+    if(o.mark>0){crayon(c,FL.markRing,SUN,6,mulberry32(61+v),0,0,Math.max(2,Math.round(o.mark*FL.markRing.length)),610+v); // his own mark: a ring round himself, and the words
+      const t=FL.mark[0],k=Math.ceil(clamp(o.mark*1.4-.3)*t.chars.length);if(k>0)crayonText(c,{...t,chars:t.chars.slice(0,k)},mulberry32(71+v),0,0)}});
+  ctx.globalAlpha=a0;
+}
+/* chase / low: behind him on the run up the slope, then skimming the grass on the far side */
+/* chapter 5 mirrors it: the same shot behind him, November, and the ground never lets go */
+const NOV='sepia(.62) saturate(.72) hue-rotate(-14deg) brightness(1.02)';
+/* — index_v8.html L2594–2598 — */
+const TW=Array.from({length:72},(_,k)=>({x:hh(k*7+1)*W,y:hh(k*11+2)*H*.8,p:hh(k*13+3)*6.28,s:2.5+hh(k*17+4)*5}));
+function twinkle(ctx,now,skip,am=1){const ts=now/1000;ctx.save();ctx.strokeStyle='#FFFDF4';ctx.lineWidth=1.6;ctx.lineCap='round';
+  for(const q of TW){if(skip&&skip(q))continue;const a=Math.sin(ts*1.6+q.p);if(a<.2)continue;const s=q.s*(.5+.7*a);ctx.globalAlpha=a*.85*am;
+    ctx.beginPath();ctx.moveTo(q.x-s,q.y);ctx.lineTo(q.x+s,q.y);ctx.moveTo(q.x,q.y-s);ctx.lineTo(q.x,q.y+s);ctx.stroke()}
+  ctx.restore()}
+/* — index_v8.html L2736–2745 — */
+const STARL=[];
+function starLayer(v){if(!STARL[v]){const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');drawItems(x,FL.starItems,0,0,1,0,v);toothOn(x,W,H);STARL[v]=c}return STARL[v]}
+/* ---- glow: bright things drawn into a half-size layer, blurred, and added on top (two blurs: a wide haze and a tight core) ---- */
+const glA=document.createElement('canvas');glA.width=960;glA.height=540;const glAx=glA.getContext('2d');
+const glB=document.createElement('canvas');glB.width=960;glB.height=540;const glBx=glB.getContext('2d');
+function glowPass(ctx,draw,blur,alpha){
+  glAx.setTransform(1,0,0,1,0,0);glAx.globalCompositeOperation='source-over';glAx.globalAlpha=1;glAx.clearRect(0,0,960,540);glAx.save();glAx.scale(.5,.5);draw(glAx);glAx.restore();
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  for(const [b,a] of [[blur,alpha],[blur*.3,alpha*.55]]){glBx.clearRect(0,0,960,540);glBx.filter=`blur(${(b/2).toFixed(1)}px)`;glBx.drawImage(glA,0,0);glBx.filter='none';ctx.globalAlpha=a;ctx.drawImage(glB,0,0,W,H)}
+  ctx.restore()}
+/* — index_v8.html L2795–2855 — */
+const E2={x:1040,y:430,r:330},RG={f:1600,D:1.9,ca:Math.cos(.35),sa:Math.sin(.35)};
+/* a point on the orbit (a circle round the earth, seen from a little above it): th = angle, dr/dy = how far off the line */
+function ringPt(th,dr=0,dy=0){const R1=1+dr,x=R1*Math.cos(th),z=R1*Math.sin(th),den=RG.D-z*RG.ca;return{x:E2.x+RG.f*x/den,y:E2.y+RG.f*(z*RG.sa-dy)/den,k:RG.D/den,z}}
+const moonTh=et=>-1.31+.026*et;   // starts just behind the earth's eastern limb; ~1.5° a second
+const hidden=p=>p.z<0&&Math.hypot(p.x-E2.x,p.y-E2.y)<E2.r;
+function drawRingRocks(ctx,v,et,front){
+  for(const r of FL.ringRocks){const p=ringPt(r.th+r.w*.026*et,r.dr,r.dy);if((p.z>=0)!==front)continue;const sz=r.s*34*p.k*p.k;
+    if(p.x<-sz||p.x>W+sz||p.y<-sz||p.y>H+sz)continue;
+    if(sz<3){ctx.fillStyle='rgba(235,235,255,.75)';ctx.fillRect(p.x,p.y,1.6,1.6);continue}
+    ctx.drawImage(FL.rockSpr[r.k][v],p.x-sz/2,p.y-sz/2,sz,sz)}}
+/* earth: the grand view, on the flight clock (o.fc) and the moon's clock (o.et, real seconds since the camera turned); o.dx = slide during the camera turn */
+function drawEarth(ctx,v,now,o={}){
+  const fc=o.fc??(o.still?80:G.fc??80),ts=now/1000,f=Math.floor(ts*12);
+  const et=o.et??(o.still?18:G.et||0);
+  const dsc=eIO(seg(fc,90,97)),zoom=1+.1*dsc,dx=o.dx||0;
+  ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;ctx.fillStyle='#06071A';ctx.fillRect(0,0,W,H);ctx.drawImage(FL.spaceGrand,dx*.6,0,W,H);
+  const col=fc<69?.15:.15+.47*eOut(seg(fc,69.7,72))-.12*seg(fc,72.5,74.5); // 「蓝紫色」: the dark blooms violet and teal, then settles
+  ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=col;ctx.drawImage(FL.bloom,dx*.3,0,W,H);ctx.restore();
+  ctx.save();ctx.translate(dx+E2.x,E2.y);ctx.scale(zoom,zoom);ctx.translate(-E2.x,-E2.y-dsc*30); // the last line: he starts to sink toward it
+  ctx.save();ctx.globalCompositeOperation='lighter';ctx.globalAlpha=.6;ctx.drawImage(FL.milkyGlow,0,0,W,H);ctx.restore(); // the milky way's own light
+  ctx.drawImage(starLayer(v),0,0);
+  const M=ringPt(moonTh(et),0,.04),mr=118*M.k,ms=FL.moon.S*mr/84;
+  /* what is behind the earth goes first, so the earth covers it */
+  drawRingRocks(ctx,v,et,false);
+  if(M.z<0)ctx.drawImage(FL.moon.can,M.x-ms/2,M.y-ms/2,ms,ms);
+  /* the air round the earth, thicker on its lit side (the sun is up to the left) */
+  ctx.save();ctx.globalCompositeOperation='lighter';ctx.globalAlpha=.75;const gs=FL.earthGlow.S;ctx.drawImage(FL.earthGlow.can,E2.x-gs/2-16,E2.y-gs/2-14);ctx.restore();
+  const es=FL.earth.S*E2.r/EARTH.r;ctx.drawImage(FL.earth.can,E2.x-es/2,E2.y-es/2,es,es);
+  ctx.save();ctx.strokeStyle='rgba(228,242,255,.75)';ctx.lineWidth=2.4;ctx.lineCap='round';ctx.beginPath();ctx.arc(E2.x,E2.y,E2.r-1.5,Math.PI*.72,Math.PI*1.64);ctx.stroke();ctx.restore();
+  if(fc>=69){const a0=seg(fc,69.3,70.8); /* 青光: teal, violet, pink ribbons on the rim */
+    crayonPass(ctx,c=>{[['#5FE3D0',0],['#A98BF2',1],['#F09AD0',2]].forEach(([cl,ri])=>{const pts=[];
+      for(let q=0;q<=64;q++){const a=3.3+q/64*2.85,rr=E2.r+24+ri*20+Math.sin(a*6+f*.45+ri*1.7)*11;pts.push({x:E2.x+Math.cos(a)*rr,y:E2.y+Math.sin(a)*rr})}
+      crayon(c,pts,cl,15,mulberry32(ri*31+v),0,0,undefined,ri*7+v,a0*.6)})},'screen')}
+  /* then what is in front of it */
+  drawRingRocks(ctx,v,et,true);
+  if(M.z>=0)ctx.drawImage(FL.moon.can,M.x-ms/2,M.y-ms/2,ms,ms);
+  /* the light: the moon's halo, its comet tail running back along the orbit (hidden where the earth is in front), the near rocks lit */
+  glowPass(ctx,g=>{
+    /* rim light along the earth's lit limb: a wide soft haze and a tight bright edge */
+    g.lineCap='round';g.strokeStyle='rgba(120,175,255,.5)';g.lineWidth=60;g.beginPath();g.arc(E2.x,E2.y,E2.r+12,Math.PI*.55,Math.PI*1.82);g.stroke();
+    g.strokeStyle='rgba(205,232,255,.85)';g.lineWidth=14;g.beginPath();g.arc(E2.x,E2.y,E2.r-3,Math.PI*.64,Math.PI*1.72);g.stroke();
+    const th0=moonTh(et);let prev=null;
+    for(let q=0;q<=90;q++){const th=th0-q*.018,p=ringPt(th,0,.03),a=Math.pow(1-q/90,1.6);
+      if(prev&&!hidden(p)&&!hidden(prev)){g.strokeStyle=`rgba(200,225,255,${(.55*a).toFixed(3)})`;g.lineWidth=(10+60*(1-q/90))*p.k;g.beginPath();g.moveTo(prev.x,prev.y);g.lineTo(p.x,p.y);g.stroke()}prev=p}
+    if(!hidden(M)){const rg=g.createRadialGradient(M.x,M.y,mr*.4,M.x,M.y,mr*3.2);rg.addColorStop(0,'rgba(255,255,250,.42)');rg.addColorStop(.35,'rgba(210,225,255,.18)');rg.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=rg;g.fillRect(M.x-mr*3.3,M.y-mr*3.3,mr*6.6,mr*6.6)}
+    /* the orbit itself as a faint ring of light, brightest near the viewer */
+    prev=null;for(let q=0;q<=160;q++){const p=ringPt(q/160*6.2832,0,0);if(prev&&!hidden(p)&&!hidden(prev)){g.strokeStyle=`rgba(170,190,255,${(.05+.13*Math.max(0,p.z)).toFixed(3)})`;g.lineWidth=40*p.k;g.beginPath();g.moveTo(prev.x,prev.y);g.lineTo(p.x,p.y);g.stroke()}prev=p}
+  },22,.85);
+  ctx.restore();
+  twinkle(ctx,now,q=>Math.hypot(q.x-E2.x,q.y-E2.y)<E2.r+40);
+  /* the foreground: rocks of the near side of the orbit drifting right to left (the same way as the ring), his own rock and the glider's,
+     which ride along with him and so stand still, the glider parked with nobody in it, and him from behind, looking at it all */
+  ctx.save();ctx.translate(dx,0);
+  for(const r of FL.footRocks){const x=((r.x-et*r.sp)%(W+900)+(W+900))%(W+900)-450;ctx.drawImage(FL.bigRock[r.k][v],x-r.s/2,r.y-r.s/2+Math.sin(ts*.4+r.p)*4,r.s,r.s)}
+  /* the glider parked at a slant on its own rock, big and far right (clear of the dialogue strip); him further left */
+  ctx.drawImage(FL.bigRock[0][v],1790-400,1080-400,800,800);
+  crayonPass(ctx,c=>drawItems(c,FL.gliderPark,1730,790,2.2,.3,v));
+  ctx.drawImage(FL.bigRock[1][v],380-300,1205-300,600,600);
+  crayonPass(ctx,c=>drawItems(c,FL.cusBackCap,380,1066,2.3,0,v));
+  ctx.restore();
+}
+/* — index_v8.html L2902–2914 — */
+/* the dream's edges: the frame darkens and breathes, and soft dashed dark lines drift along the borders, like the edge of sleep */
+function drawDreamEdge(ctx,now){const ts=now/1000,br=.85+.15*Math.sin(ts*.6);
+  const g=ctx.createRadialGradient(960,500,380*br,960,520,1160);g.addColorStop(0,'rgba(18,20,40,0)');g.addColorStop(.55,'rgba(18,20,40,.2)');g.addColorStop(1,'rgba(8,10,26,.74)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  /* soft dashed dark lines curling in from the corners and the borders — wavering, never a frame */
+  ctx.save();ctx.filter='blur(2.2px)';ctx.lineCap='round';
+  for(let k=0;k<12;k++){const side=k%4,ph=ts*.3+k*1.7,sw=Math.sin(ph)*26,dep=60+hh(k*5+1)*120;
+    ctx.setLineDash([10+hh(k*3)*30,10+hh(k*7)*22]);ctx.lineDashOffset=-ts*(10+k*2)*(k%2?1:-1);ctx.lineWidth=1.6+hh(k*11)*3.2;ctx.strokeStyle=`rgba(16,18,36,${(.18+hh(k*13)*.22).toFixed(2)})`;ctx.beginPath();
+    if(side===0){const x0=hh(k*17)*700-100;ctx.moveTo(x0,-20);ctx.bezierCurveTo(x0+220,dep+sw,x0+620,dep*.4-sw,x0+980,-20)}
+    else if(side===1){const y0=hh(k*19)*500;ctx.moveTo(-20,y0);ctx.bezierCurveTo(dep+sw,y0+160,dep*.5-sw,y0+420,-20,y0+620)}
+    else if(side===2){const y0=hh(k*23)*500;ctx.moveTo(W+20,y0);ctx.bezierCurveTo(W-dep-sw,y0+180,W-dep*.5+sw,y0+430,W+20,y0+640)}
+    else{const x0=hh(k*29)*900;ctx.moveTo(x0,H+20);ctx.bezierCurveTo(x0+260,H-dep-sw,x0+700,H-dep*.5+sw,x0+1000,H+20)}
+    ctx.stroke()}
+  ctx.restore()}
+/* — index_v8.html L3437–3438 — */
+const MEL=[[0,19],[2,16],[4,14],[6,12],[9,9],[12,12],[14,14],[16,16],[18,14],[20,12],[22,9],[25,7],[28,9],[30,12],[32,19],[34,16],[36,14],[38,12],[41,14],[44,16],[46,14],[48,12],[51,9],[54,7],[56,4],[60,2],[62,0]];
+const BASS=[[0,-12],[16,-15],[32,-17],[48,-12]];
+/* — index_v8.html L3457–3458 — */
+const NOTE=s=>{const m=/^([A-G])(#|b)?(-?\d)$/.exec(s);return 12*(+m[3]+1)+{C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1]]+(m[2]==='#'?1:m[2]==='b'?-1:0)};
+const HZ=n=>440*Math.pow(2,(n-69)/12);
+/* — index_v8.html L3508–3510 — */
+function wavOf(buf){const n=buf.length,ch=buf.numberOfChannels,sr=buf.sampleRate,b=new ArrayBuffer(44+n*ch*2),v=new DataView(b),w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF');v.setUint32(4,36+n*ch*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,ch,true);v.setUint32(24,sr,true);v.setUint32(28,sr*ch*2,true);v.setUint16(32,ch*2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*ch*2,true);
+  const d=[...Array(ch)].map((_,c)=>buf.getChannelData(c));let o=44;for(let i=0;i<n;i++)for(let c=0;c<ch;c++){v.setInt16(o,Math.max(-1,Math.min(1,d[c][i]))*32767,true);o+=2}return new Blob([b],{type:'audio/wav'})}
+/* — index_v8.html L4041 — */
+function toothOn(x,w,h){x.save();x.globalCompositeOperation='destination-in';x.fillStyle=x.createPattern(toothC,'repeat');x.fillRect(0,0,w,h);x.restore()}
+/* ======================= /LIB ======================= */
+
+const X=document.getElementById('pv').getContext('2d');
+const tmp2=document.createElement('canvas');tmp2.width=W;tmp2.height=H;const TX2=tmp2.getContext('2d');
+const grainC=document.createElement('canvas');grainC.width=W;grainC.height=H;
+let ready=false,dotItems=[];
+const CN='"Noto Sans SC","Microsoft YaHei",sans-serif',UI='Inter,"Noto Sans SC",sans-serif',DISP='"Inter Tight",Inter,"Noto Sans SC",sans-serif';
+
+/* ---------- helpers ---------- */
+function reset(c){c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;c.globalCompositeOperation='source-over';c.filter='none';c.letterSpacing='0px';c.textAlign='left';c.textBaseline='alphabetic'}
+function text(c,s,x,y,font,color,o={}){if((o.a??1)<=0)return;c.save();c.font=font;c.fillStyle=color;c.globalAlpha*=o.a??1;c.letterSpacing=(o.ls||0)+'px';c.textAlign=o.align||'left';c.fillText(s,x,y);c.restore()}
+const cap=(c,s,x,y,color,o={})=>text(c,s.toUpperCase(),x,y,`${o.w||500} ${o.size||12}px ${UI}`,color,{ls:(o.size||12)*.1,...o});
+function measure(c,s,font,ls=0){c.save();c.font=font;c.letterSpacing=ls+'px';const w=c.measureText(s).width;c.restore();return w}
+/* a line of type that rises into a slot, letter by letter, and leaves the same way (masked: Swiss, flat) */
+function rise(c,t,s,x,y,size,color,tIn,tOut,o={}){if(t<tIn||(tOut!=null&&t>tOut+(o.st2??.02)*[...s].length+.6))return;
+  const font=`${o.w||700} ${size}px ${o.f||CN}`,ls=o.ls??size*.02,st=o.st??.035,dur=o.dur??.55,st2=o.st2??.02,dur2=o.dur2??.4;
+  c.save();c.font=font;c.letterSpacing=ls+'px';c.fillStyle=color;c.globalAlpha*=o.a??1;
+  const chars=[...s],ws=chars.map(ch=>c.measureText(ch).width),tot=ws.reduce((a,b)=>a+b,0);
+  let x0=o.align==='center'?x-tot/2:o.align==='right'?x-tot:x;
+  c.beginPath();c.rect(x0-40,y-size*1.02,tot+80,size*1.3);c.clip();
+  let px=x0;chars.forEach((ch,k)=>{const pi=eOut(seg(t,tIn+k*st,tIn+k*st+dur)),po=tOut!=null?eIn(seg(t,tOut+k*st2,tOut+k*st2+dur2)):0;
+    if(pi>0&&po<1)c.fillText(ch,px,y+(1-pi)*size*1.15-po*size*1.15);px+=ws[k]});
+  c.restore();return tot}
+/* odometer: keys [[time,string],…]; the newest slides up into place over the last */
+function roll(c,t,keys,x,y,size,color,o={}){let i=-1;for(let k=0;k<keys.length;k++)if(keys[k][0]<=t)i=k;if(i<0)return;
+  const dur=o.dur??.28,p=eOut(seg(t,keys[i][0],keys[i][0]+dur)),font=`${o.w||600} ${size}px ${o.f||DISP}`;
+  c.save();c.font=font;c.letterSpacing=(o.ls??-size*.04)+'px';c.fillStyle=color;c.textAlign=o.align||'left';c.globalAlpha*=o.a??1;
+  c.beginPath();c.rect(-2000,y-size*.78,6000,size*.82);c.clip();
+  if(i>0&&p<1)c.fillText(keys[i-1][1],x,y-p*size*.9);c.fillText(keys[i][1],x,y+(1-p)*size*.9);c.restore()}
+function hair(c,x,y,w,h,col,a=1){c.save();c.globalAlpha*=a;c.fillStyle=col;c.fillRect(x,y,w,h);c.restore()}
+function regMarks(c,col,p=1,jit=0){if(p<=0)return;const pts=[[60,40],[1860,40],[60,1040],[1860,1040]];c.save();c.lineWidth=1.25;
+  for(const [col2,dx,dy,al] of [[col,jit?5:0,jit?-3:0,1],[SUN,jit?-3:0,jit?2:0,.9]]){c.strokeStyle=col2;c.globalAlpha=al;
+    for(const [x1,y1] of pts){const e=eOut(p),x=lerp(960,x1,e)+dx,y=lerp(540,y1,e)+dy;c.save();c.translate(x,y);c.rotate((1-e)*2);c.beginPath();c.arc(0,0,10,0,6.2832);c.moveTo(-20,0);c.lineTo(20,0);c.moveTo(0,-20);c.lineTo(0,20);c.stroke();c.restore()}}
+  c.restore()}
+function gridLines(c,col,a){if(a<=0)return;c.save();c.globalAlpha=a;c.fillStyle=col;for(let i=1;i<=12;i++){c.fillRect(COL(i),80,1,920);c.fillRect(COLR(i),80,1,920)}c.fillRect(0,80,W,1);c.fillRect(0,1000,W,1);c.restore()}
+
+/* ---------- the game, in pieces: each draws a full 1920×1080 frame (the frame cuts a window into it) ---------- */
+const NOVF='sepia(.62) saturate(.72) hue-rotate(-14deg) brightness(1.02)';
+const spAt=lt=>lerp(.35,4.2,eIn(clamp(lt/4)));
+const flDAt=lt=>{let d=0;const n=Math.ceil(Math.max(0,lt)/.02);for(let k=0;k<n;k++)d+=spAt((k+.5)*.02)*.02;return d};
+function sRun(c,lt,v,ts,nov,lift=0){const sp=spAt(lt),flD=flDAt(lt),pitch=eIn(clamp(lift))*900,bob=Math.sin(ts*17)*Math.min(5,sp*1.4)*(1-clamp(lift*2)),y0=575+pitch+bob,vpX=960;
+  c.globalCompositeOperation='source-over';c.globalAlpha=1;if(nov)c.filter=NOVF;
+  c.drawImage(FL.sky,0,Math.max(0,(1080-pitch*.6)/2),960,540,0,0,W,H);
+  for(let k=0;k<2;k++){const cl=BGS.ascent.clouds[k+1],cx=((300+k*900-ts*(14+k*6)-flD*40)%2600+2600)%2600-400,cy=170+k*130+pitch*.5;c.globalAlpha=.9;c.drawImage(cl.can,cx-cl.cw*.3,cy-cl.ch*.3,cl.cw*.6,cl.ch*.6)}
+  c.globalAlpha=1;c.drawImage(FL.ground,0,0,960,540,0,pitch+bob,W,H);
+  crayonPass(c,g=>{drawItems(g,FL.skyItems,0,pitch*.5,1,0,v);drawItems(g,FL.groundItems,0,pitch+bob,1,0,v);
+    for(let k=0;k<58;k++){const u=(hh(k*31+7)-.5)*7,z=(((hh(k*17+3)*11-flD)%11)+11)%11+.7,sx=vpX+u*640/z,sy=y0+430/z;
+      if(sy>H+60||sy<-20||sx<-100||sx>W+100)continue;const h=Math.min(96,72/z),w=h*.9;
+      crayon(g,densify([{x:sx-w*.5,y:sy},{x:sx-w*.3,y:sy-h},{x:sx-w*.1,y:sy},{x:sx+w*.12,y:sy-h*.8},{x:sx+w*.3,y:sy},{x:sx+w*.46,y:sy-h*.6},{x:sx+w*.6,y:sy}],4),nov?'#9C7A3E':'#55764A',Math.max(2.2,7/Math.sqrt(z)),mulberry32(k*7919+v*104729+1),0,0,undefined,k*131+v*17)}
+    if(sp>2.4){g.save();g.globalAlpha=.55*clamp((sp-2.4)/.6);g.strokeStyle='#F4F1E6';g.lineWidth=2.4;g.lineCap='round';
+      for(let k=0;k<12;k++){const a=.12+hh(k*5+1)*(Math.PI-.24),d0=((hh(k*9+2)*900+flD*260)%900)+140,len=60+sp*34;g.beginPath();g.moveTo(vpX+Math.cos(a)*d0,y0+Math.sin(a)*d0*.5);g.lineTo(vpX+Math.cos(a)*(d0+len),y0+Math.sin(a)*(d0+len)*.5);g.stroke()}g.restore()}});
+  c.filter='none';
+  flightGlider(c,v,ts*1000,{eng:true,dy:bob*.6-eIn(clamp(lift))*120,rot:Math.sin(ts*11)*.012*Math.min(1,sp/3)})}
+function sCloud(c,clt,v,ts){const cl=BGS.ascent.clouds,vp={x:1220,y:460};
+  c.globalCompositeOperation='source-over';c.globalAlpha=1;c.drawImage(FL.sky,0,Math.max(0,620-clt*60)/2,960,540,0,0,W,H);
+  const list=[];for(let k=0;k<12;k++){const z=1.15+k*.5-clt*1.45;if(z>.3&&z<7)list.push({c:cl[k%cl.length],z,k})}list.sort((a,b)=>b.z-a.z);
+  const one=q=>{const ux=(hh(q.k*13+1)-.5)*1.7,uy=(hh(q.k*29+2)-.5)*.9,s=.75/q.z,x=vp.x+ux*820/q.z,y=vp.y+uy*520/q.z;c.globalAlpha=clamp((q.z-.3)/.4)*clamp((7-q.z)/1.2);c.drawImage(q.c.can,x-q.c.cw*s/2,y-q.c.ch*s/2,q.c.cw*s,q.c.ch*s)};
+  list.filter(q=>q.z>=.95).forEach(one);c.globalAlpha=1;flightGlider(c,v,ts*1000,{eng:true,dy:Math.sin(ts*2.1)*6});list.filter(q=>q.z<.95).forEach(one);c.globalAlpha=1}
+function sDeep(c,camY,v,ts,gl=true){c.save();c.translate(960,540);c.scale(1.18,1.18);c.translate(-960,-540);
+  c.globalCompositeOperation='source-over';c.globalAlpha=1;const wd=BGS.ascent;c.drawImage(wd.base,0,Math.max(0,camY/2),960,540,0,0,W,H);
+  for(const cl of wd.clouds)if(!cl.front)drawCloudW(c,cl,camY,ts);
+  crayonPass(c,g=>{for(const it of wd.items){const b=it.bb;if(b.y1-camY<-40||b.y0-camY>H+40)continue;const r=mulberry32(it.id*7919+v*104729+1);
+    if(it.k==='f'){g.save();pathPoly(g,it.clip,0,-camY);g.clip();crayon(g,it.pts,it.color,it.w,r,0,-camY,it.pts.length,it.id*131+v*17);g.restore()}else crayon(g,it.pts,it.color,it.w,r,0,-camY,it.pts.length,it.id*131+v*17)}});
+  for(const cl of wd.clouds)if(cl.front)drawCloudW(c,cl,camY,ts);c.restore();
+  if(camY<600)twinkle(c,ts*1000,null,seg(600-camY,0,400));if(gl)flightGlider(c,v,ts*1000,{eng:true,dy:Math.sin(ts*1.6)*8})}
+function sEarth(c,lt,v,t){drawEarth(c,v,t*1000,{fc:Math.min(75,69.2+lt*1.4),et:16+lt*2.2})}
+function sDream(c,lt,v){const ts=lt+24,bg=BGS.dream;c.globalCompositeOperation='source-over';c.globalAlpha=1;c.drawImage(bg.base,0,0,W,H);
+  crayonPass(c,g=>{for(const it of bg.items){const r=mulberry32(it.id*7919+v*104729+1);
+    if(it.vx){const ax=it.ax!=null?it.ax:it.bb.x0,dx=(((ax+400+it.vx*ts)%2800)+2800)%2800-400-ax;crayon(g,it.pts,it.color,it.w,r,dx,0,it.pts.length,it.id*131+v*17);continue}
+    if(it.k==='f'){g.save();pathPoly(g,it.clip,0,0);g.clip();crayon(g,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17);g.restore()}else crayon(g,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17)}});
+  crayonPass(c,g=>drawItems(g,FL.cusBack,250,1042,.9,0,v))}
+function sNov(c,lt,v){const bg=BGS.slope;c.globalCompositeOperation='source-over';c.globalAlpha=1;c.drawImage(bg.base,0,0,W,H);
+  crayonPass(c,g=>{for(const it of bg.items){const r=mulberry32(it.id*7919+v*104729+1);
+    if(it.k==='f'){g.save();pathPoly(g,it.clip,0,0);g.clip();crayon(g,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17);g.restore()}else crayon(g,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17)}})}
+const SCENES2={
+  july:(c,lt,v,t)=>sRun(c,1.2+lt,v,t,false),
+  lift:(c,lt,v,t)=>sRun(c,3+lt,v,t,false,.3+lt*.5),
+  nov:(c,lt,v,t)=>sRun(c,1.2+lt,v,t,true),
+  novslope:(c,lt,v)=>sNov(c,lt,v),
+  cloud:(c,lt,v,t)=>sCloud(c,1.6+lt*1.4,v,t),
+  deep:(c,lt,v,t)=>sDeep(c,lerp(1700,250,clamp(lt/2.4)),v,t),
+  stars:(c,lt,v,t)=>sDeep(c,140,v,t,false),
+  earth:(c,lt,v,t)=>sEarth(c,lt,v,t),
+  dream:(c,lt,v)=>sDream(c,lt,v),
+};
+/* a window into the picture: r = {x,y,w,h} or {cx,cy,r}; p opens it from one edge; s = how far in the picture is zoomed */
+function frag(c,t,key,lt,r,p,o={}){if(p<=0)return;const v=((Math.floor(t*12)%3)+3)%3;
+  reset(TX2);SCENES2[key](TX2,lt,v,t);reset(TX2);
+  const s=o.s||1,fx=o.fx??(r.cx??r.x+r.w/2),fy=o.fy??(r.cy??r.y+r.h/2),dir=o.dir||'up',e=eOut(clamp(p));
+  c.save();c.beginPath();
+  if(r.r!=null)c.arc(r.cx,r.cy,r.r*e,0,6.2832);
+  else if(dir==='up')c.rect(r.x,r.y+r.h*(1-e),r.w,r.h*e);else if(dir==='down')c.rect(r.x,r.y,r.w,r.h*e);
+  else if(dir==='right')c.rect(r.x,r.y,r.w*e,r.h);else c.rect(r.x+r.w*(1-e),r.y,r.w*e,r.h);
+  c.clip();if(o.at){const cx=r.cx??r.x+r.w/2,cy=r.cy??r.y+r.h/2;c.drawImage(tmp2,cx-o.at.x*s,cy-o.at.y*s,W*s,H*s)}else c.drawImage(tmp2,fx-W*s/2+(o.dx||0),fy-H*s/2+(o.dy||0),W*s,H*s);c.restore();
+  if(o.label&&e>.6){const col=o.lc||COBALT,a=seg(e,.6,1)*(o.la??1);
+    if(r.r!=null){cap(c,o.label,r.cx-r.r,r.cy+r.r+28,col,{a,size:11})}else{hair(c,r.x,r.y+r.h+10,r.w,1,col,a*.6);cap(c,o.label,r.x,r.y+r.h+30,col,{a,size:11})}}}
+
+/* ---------- the seal (AI disclosure), the yellow line, the glyph ---------- */
+const SEAL_RING='AI-ASSISTED · 约 60% · STORY & TEXT BY THE AUTHOR · 故事与文本由作者完成 · ENDND × CLAUDE · ';
+function ringText(c,s,r,size,rot,prog=1,color){c.save();c.rotate(rot);c.font=`600 ${size}px ${UI}`;c.fillStyle=color;
+  const chars=[...s],ws=chars.map(ch=>c.measureText(ch).width),tot=ws.reduce((a,b)=>a+b,0),gap=(2*Math.PI*r-tot)/chars.length;let acc=0;
+  chars.forEach((ch,i)=>{if(i/chars.length<prog){const ang=(acc+ws[i]/2)/r;c.save();c.rotate(ang);c.translate(0,-r);c.textAlign='center';c.fillText(ch,0,size*.35);c.restore()}acc+=ws[i]+gap});c.restore()}
+/* the seal: R = outer radius; parts (0–1) for circle/ticks/ring/number; n = the number shown */
+function seal(c,cx,cy,R,o){const k=R/230,col=o.col||COBALT;c.save();c.translate(cx,cy);c.scale(o.sc||1,o.sc||1);c.strokeStyle=col;c.fillStyle=col;c.globalAlpha*=o.a??1;
+  c.lineWidth=3*k;c.beginPath();c.arc(0,0,R,-Math.PI/2,-Math.PI/2+6.2832*(o.c1??1));c.stroke();
+  c.lineWidth=1.2*k;c.beginPath();c.arc(0,0,R*.66,-Math.PI/2,-Math.PI/2-6.2832*(o.c2??1),true);c.stroke();
+  const nt=Math.floor(96*(o.ticks??1));for(let i=0;i<nt;i++){const a=i/96*6.2832-Math.PI/2,l=i%8?6:14;c.beginPath();c.moveTo(Math.cos(a)*(R-6*k),Math.sin(a)*(R-6*k));c.lineTo(Math.cos(a)*(R-(6+l)*k),Math.sin(a)*(R-(6+l)*k));c.lineWidth=1*k;c.stroke()}
+  ringText(c,SEAL_RING,R*.82,13*k,o.rot||0,o.ring??1,col);
+  if((o.num??1)>0){const a=o.num??1;text(c,'AI 辅助制作',0,-58*k,`700 ${24*k}px ${CN}`,col,{a,align:'center',ls:4*k});
+    text(c,String(o.n??60).padStart(2,'0'),-8*k,62*k,`600 ${150*k}px ${DISP}`,col,{a,align:'center',ls:-6*k});
+    text(c,'%',72*k,40*k,`600 ${48*k}px ${DISP}`,col,{a});cap(c,'Approx. · 约',0,100*k,col,{a,align:'center',size:12*k})}
+  c.restore()}
+const LINE1=resample(catmull([[262,600],[470,560],[760,640],[1060,575],[1360,650],[1660,585],[2000,620]].map(([x,y])=>({x,y})),24),5);
+const LINE2=resample(catmull([[-60,1000],[160,960],[330,900],[460,790],[560,690],[640,560],[700,470]].map(([x,y])=>({x,y})),24),5);
+function yline(c,pts,p,v,a=1,w=9){if(p<=0||a<=0)return;crayonPass(c,g=>crayon(g,pts,SUN,w,mulberry32(555+v*31),0,0,Math.max(2,Math.round(clamp(p)*pts.length)),7000+v*17,a))}
+function yDot(c,x,y,s,v){const fi=dotItems[0],li=dotItems[1];crayonPass(c,g=>{g.save();g.translate(x,y);g.scale(s,s);g.save();pathPoly(g,fi.clip,0,0);g.clip();
+  crayon(g,fi.pts,SUN,fi.w,mulberry32(fi.id*7919+v*104729+1),0,0,fi.pts.length,fi.id*131+v*17);g.restore();crayon(g,li.pts,SUN_D,li.w,mulberry32(li.id*7919+v*104729+1),0,0,li.pts.length,li.id*131+v*17);g.restore()})}
+const GLYPH_PARTS=[new Path2D('M40 80H705V220H40Z'),new Path2D('M555 80H705V470C705 640 760 760 850 790L930 615L985 600L995 880C995 930 960 955 900 955C720 955 555 820 555 520Z'),new Path2D('M937 117L1013 223L688 453L612 347Z')];
+const DOTU=[[700,415],[990,520],[940,610],[700,500]],DOTC={x:832.5,y:511.25};
+const DOTP=DOTU.map(([x,y])=>({x:x-DOTC.x,y:y-DOTC.y}));
+
+/* ============================== easing & the camera ============================== */
+/* cubic-bezier, solved by bisection (deterministic, cheap enough for a few calls a frame) */
+function cubicBezier(x1,y1,x2,y2){const bx=t=>3*x1*(1-t)*(1-t)*t+3*x2*(1-t)*t*t+t*t*t,by=t=>3*y1*(1-t)*(1-t)*t+3*y2*(1-t)*t*t+t*t*t;
+  return x=>{if(x<=0)return 0;if(x>=1)return 1;let lo=0,hi=1,t=x;for(let i=0;i<28;i++){t=(lo+hi)/2;if(bx(t)<x)lo=t;else hi=t}return by((lo+hi)/2)}}
+const EZ={E0:cubicBezier(0,0,0,1),EIO:cubicBezier(.65,0,.35,1),EIN:cubicBezier(.55,0,1,.45),LIN:x=>x};
+/* camera keys: [time, centre x, centre y, scale, rotation, ease]. 'cut' jumps; any other ease travels from the key before it */
+const CAMK=[
+  [0,960,470,1.9,-.035,'cut'],[2.9,960,500,1,0,'E0'],[3.75,262,600,2.4,0,'EIN'],
+  [4.0,262,600,2.4,0,'cut'],[4.45,262,520,1.5,0,'EIO'],
+  [4.5,1240,318,5.2,0,'cut'],[6.5,470,318,4.6,0,'E0'],[7.6,960,520,1,0,'EIO'],
+  [8.7,860,520,1.18,.012,'cut'],[11.95,1080,540,1,0,'E0'],
+  [12.0,1460,620,1.55,0,'cut'],[14.6,1000,560,1.06,0,'E0'],[16.1,960,540,1,0,'EIO'],
+  [16.1,960,700,1.3,0,'cut'],[19.25,960,420,1.04,0,'E0'],
+  [19.3,1200,480,1.9,.02,'cut'],[22.0,960,540,1,0,'E0'],
+  [22.0,640,430,1.35,-.02,'cut'],[24.4,1240,540,1.05,0,'E0'],
+  [24.45,330,600,3.4,0,'cut'],[26.0,960,540,1,0,'E0'],
+  [26.0,960,540,1,0,'cut'],[27.6,880,500,1.3,-.01,'EIN'],
+  [35.3,960,560,1,0,'cut'],[37.4,960,560,1.35,0,'EIO'],
+  [37.4,960,560,1.28,0,'cut'],[40.2,960,540,1,0,'E0'],
+  [40.2,470,500,1.75,-.03,'cut'],[43.6,960,540,1,0,'E0']];
+function camKeys(t){let a=0;for(let k=0;k<CAMK.length;k++)if(CAMK[k][0]<=t)a=k;const A=CAMK[a],B=CAMK[a+1];
+  if(B&&B[5]!=='cut'&&t<B[0]){const u=EZ[B[5]]((t-A[0])/(B[0]-A[0]));return{cx:lerp(A[1],B[1],u),cy:lerp(A[2],B[2],u),s:lerp(A[3],B[3],u),r:lerp(A[4],B[4],u)}}
+  if(B&&B[5]!=='cut'&&t>=B[0])return{cx:B[1],cy:B[2],s:B[3],r:B[4]};
+  return{cx:A[1],cy:A[2],s:A[3],r:A[4]}}
+
+/* ============================== flat drawings: the motifs, drawn crisp ============================== */
+/* the glider seen from above, as an icon: wing, body, tail, a paper-coloured cockpit */
+function gliderTop(c,x,y,s,rot,col,hole=PAPER){c.save();c.translate(x,y);c.rotate(rot);c.scale(s,s);c.fillStyle=col;
+  c.beginPath();c.roundRect(-300,-14,600,28,14);c.fill();
+  c.beginPath();c.moveTo(-16,-80);c.quadraticCurveTo(0,-140,16,-80);c.lineTo(9,150);c.lineTo(-9,150);c.closePath();c.fill();
+  c.beginPath();c.roundRect(-82,136,164,16,8);c.fill();c.fillStyle=hole;c.beginPath();c.arc(0,-58,10,0,6.2832);c.fill();c.restore()}
+/* wind: long curves whose dashes travel; dir 1 = left to right */
+function wind(c,t,x,y,w,h,n,col,a=1,sp=260,dir=1){c.save();c.strokeStyle=col;c.globalAlpha*=a;c.lineCap='round';
+  for(let k=0;k<n;k++){const yy=y+(k+.5)*h/n,amp=10+hh(k*7)*26,ph=hh(k*3)*6.28,len=w*(.18+hh(k*5)*.22);
+    c.lineWidth=k%3?1.2:2.2;c.setLineDash([len,w*.5+hh(k*11)*w*.4]);c.lineDashOffset=-dir*t*sp*(.7+hh(k*13)*.8)-hh(k*17)*w;
+    c.beginPath();c.moveTo(x,yy);for(let q=1;q<=24;q++){const u=q/24;c.lineTo(x+w*u,yy+Math.sin(u*6.28+ph+t*.6)*amp)}c.stroke()}c.restore()}
+/* a hill as a line screen: horizontal bars that thin out toward the top (the same screen as the glyph's) */
+function slope(c,x,y,w,h,col,a=1,p=1){c.save();c.globalAlpha*=a;c.beginPath();c.moveTo(x,y+h);c.bezierCurveTo(x+w*.25,y+h*.35,x+w*.55,y,x+w*.72,y);c.bezierCurveTo(x+w*.86,y,x+w*.95,y+h*.2,x+w,y+h*.32);c.lineTo(x+w,y+h);c.closePath();c.clip();
+  c.fillStyle=col;const n=22;for(let i=0;i<n;i++){const u=i/(n-1),yy=y+h-(i+1)*h/n,bh=h/n*lerp(.95,.12,u);if(i/n<p)c.fillRect(x,yy,w,bh)}c.restore()}
+/* nine squares on the grid: the yards; lit = how many are run */
+function yards(c,x,y,cell,lit,col,a=1,fall=0){for(let i=0;i<9;i++){const xx=x+i*(cell+24),dy=fall?eIn(clamp(fall*1.6-i*.08))*700:0;
+  c.save();c.globalAlpha*=a;c.strokeStyle=col;c.fillStyle=col;c.lineWidth=1.2;if(i<lit)c.fillRect(xx,y+dy,cell,cell);else c.strokeRect(xx+.5,y+dy+.5,cell-1,cell-1);
+  c.restore();cap(c,String(9-i).padStart(2,'0'),xx+8,y+dy+20,i<lit?(col===COBALT?PAPER:COBALT):col,{a:a*.9,size:11})}}
+/* the earth and the moon as a diagram: a screened disc, a dashed orbit, a moving moon, leaders and labels */
+function orbit(c,t,cx,cy,R,col,a=1,o={}){c.save();c.globalAlpha*=a;
+  if(!o.noDisc){c.save();c.beginPath();c.arc(cx,cy,R,0,6.2832);c.clip();c.fillStyle=col;for(let i=0;i<30;i++){const yy=cy-R+i*2*R/30;c.fillRect(cx-R,yy,2*R,2*R/30*lerp(.15,.9,i/29))}c.restore();
+    c.strokeStyle=col;c.lineWidth=1.4;c.beginPath();c.arc(cx,cy,R,0,6.2832);c.stroke()}
+  const rx=R*2.7,ry=R*.78,rot=-.22,th=t*.35+(o.ph||0);c.strokeStyle=col;c.lineWidth=1.2;c.setLineDash([3,7]);c.beginPath();c.ellipse(cx,cy,rx,ry,rot,0,6.2832);c.stroke();c.setLineDash([]);
+  const mx=cx+Math.cos(th)*rx*Math.cos(rot)-Math.sin(th)*ry*Math.sin(rot),my=cy+Math.cos(th)*rx*Math.sin(rot)+Math.sin(th)*ry*Math.cos(rot);
+  c.fillStyle=col;c.beginPath();c.arc(mx,my,R*.2,0,6.2832);c.fill();
+  c.lineWidth=1;c.beginPath();c.moveTo(cx,cy);c.lineTo(mx,my);c.stroke();c.restore();
+  if(!o.noLabel){cap(c,'地球 · Earth',cx+R*.72,cy-R-20,col,{a,size:11});cap(c,'月球 · Moon',mx+R*.26,my-10,col,{a,size:11});cap(c,'384 400 km',(cx+mx)/2+10,(cy+my)/2+18,col,{a,size:11})}}
+/* stars as plus marks, scattered by a hash; they breathe */
+function stars(c,t,x,y,w,h,n,col,a=1,sd=1){c.save();c.strokeStyle=col;c.lineWidth=1.4;for(let k=0;k<n;k++){const px=x+hh(k*31+sd)*w,py=y+hh(k*17+sd*7)*h,s=(3+hh(k*5+sd)*9)*(.6+.4*Math.sin(t*2.2+k));
+  c.globalAlpha=a*(.45+.55*hh(k*3+sd));c.beginPath();c.moveTo(px-s,py);c.lineTo(px+s,py);c.moveTo(px,py-s);c.lineTo(px,py+s);c.stroke()}c.restore()}
+/* a flock of gliders in Vs, drifting */
+function flock(c,t,x,y,w,h,col,a=1,sp=60,sd=3){for(let g=0;g<7;g++){const n=5+(g%3)*2,s=.09+hh(g*7+sd)*.09,gx=x+((hh(g*13+sd)*w+t*sp*(1+hh(g)))%(w+400))-200,gy=y+hh(g*29+sd)*h;
+  for(let k=0;k<n;k++){const side=k%2?1:-1,d=Math.ceil(k/2);c.save();c.globalAlpha*=a;gliderTop(c,gx-d*620*s,gy+side*d*420*s,s,Math.PI/2,col,col===COBALT?PAPER:COBALT);c.restore()}}}
+/* a halftone disc: the sun, the moon */
+function halftone(c,cx,cy,r,col,a=1,cell=16){c.save();c.globalAlpha*=a;c.fillStyle=col;for(let yy=-r;yy<=r;yy+=cell)for(let xx=-r;xx<=r;xx+=cell){const d=Math.hypot(xx,yy)/r;if(d>1)continue;c.beginPath();c.arc(cx+xx,cy+yy,cell*.48*(1-d*.85),0,6.2832);c.fill()}c.restore()}
+/* November, as a calendar: days crossed off for a while, and then not */
+function calendar(c,t,x,y,cell,col,a=1,t0=0){cap(c,'November · 十一月',x,y-16,col,{a});c.save();c.globalAlpha*=a;c.strokeStyle=col;c.lineWidth=1;
+  for(let d=0;d<30;d++){const r=Math.floor((d+5)/7),q=(d+5)%7,xx=x+q*cell,yy=y+r*cell;c.globalAlpha=a*.5;c.strokeRect(xx+.5,yy+.5,cell-1,cell-1);
+    c.globalAlpha=a;c.font=`500 ${cell*.22}px ${UI}`;c.fillStyle=col;c.fillText(String(d+1),xx+6,yy+cell*.3);
+    const p=seg(t,t0+d*.05,t0+d*.05+.15);if(d<9&&p>0){c.lineWidth=2;c.beginPath();c.moveTo(xx+8,yy+8);c.lineTo(xx+8+(cell-16)*p,yy+8+(cell-16)*p);c.stroke();c.lineWidth=1}
+    if(d===10){c.lineWidth=2;c.beginPath();c.arc(xx+cell/2,yy+cell/2,cell*.38,0,6.2832*seg(t,t0+.8,t0+1.3));c.stroke();c.lineWidth=1}}c.restore()}
+/* the book with its corner folded down */
+function book(c,x,y,w,h,col,a=1,p=1){const f=w*.22*p;c.save();c.globalAlpha*=a;c.strokeStyle=col;c.lineWidth=1.4;c.beginPath();c.moveTo(x,y);c.lineTo(x+w,y);c.lineTo(x+w,y+h);c.lineTo(x+f,y+h);c.lineTo(x,y+h-f);c.closePath();c.stroke();
+  c.fillStyle=col;c.beginPath();c.moveTo(x,y+h-f);c.lineTo(x+f,y+h-f);c.lineTo(x+f,y+h);c.closePath();c.fill();for(let i=0;i<6;i++)c.fillRect(x+w*.14,y+h*.18+i*h*.1,w*(i===5?.4:.7),2);c.restore()}
+/* bars that thin out: a line screen block */
+function screenBlock(c,x,y,w,h,col,a=1,n=16){c.save();c.globalAlpha*=a;c.fillStyle=col;for(let i=0;i<n;i++)c.fillRect(x,y+i*h/n,w,h/n*lerp(.9,.1,i/(n-1)));c.restore()}
+
+/* ============================== decoration: small type that stays out of the way ============================== */
+function vtext(c,s,x,y,col,a=.5){c.save();c.translate(x,y);c.rotate(Math.PI/2);cap(c,s,0,0,col,{a,size:10});c.restore()}
+function dataBlock(c,x,y,rows,col,a=.6,w=230){if(a<=0)return;rows.forEach(([k,v],i)=>{const yy=y+i*18;cap(c,k,x,yy,col,{a,size:10});cap(c,v,x+w,yy,col,{a,size:10,align:'right'});hair(c,x,yy+5,w,1,col,a*.25)})}
+function bigOutline(c,s,x,y,size,col,a=.18,align='left'){if(a<=0)return;c.save();c.globalAlpha*=a;c.font=`600 ${size}px ${DISP}`;c.letterSpacing=(-size*.04)+'px';c.textAlign=align;c.strokeStyle=col;c.lineWidth=1.2;c.strokeText(s,x,y);c.restore()}
+function cross(c,x,y,r,col,a=.5){c.save();c.globalAlpha*=a;c.strokeStyle=col;c.lineWidth=1;c.beginPath();c.moveTo(x-r,y);c.lineTo(x+r,y);c.moveTo(x,y-r);c.lineTo(x,y+r);c.stroke();c.beginPath();c.arc(x,y,r*.45,0,6.2832);c.stroke();c.restore()}
+/* a quotation from the game: 「…」, underlined as each line lands, its chapter underneath */
+function quote(c,t,lines,x,y,size,col,tIn,tOut,src,o={}){const lh=o.lh||size*1.32,n=lines.length;let wMax=0;
+  lines.forEach((ln,i)=>{const s=(i===0?'「':'')+ln+(i===n-1?'」':''),ti=tIn+i*.25,w=rise(c,t,s,x-(i===0?size:0),y+i*lh,size,col,ti,tOut,{w:o.w||700,ls:o.ls??size*.02,st:o.st??.035,align:o.align})||0;
+    const fw=measure(c,s,`${o.w||700} ${size}px ${CN}`,o.ls??size*.02),u=eOut(seg(t,ti+.35,ti+1.0))*(tOut!=null?1-eIn(seg(t,tOut,tOut+.35)):1),x0=o.align==='center'?x-fw/2:x-(i===0?size:0);
+    if(u>0)hair(c,x0+(i===0?size*.9:0),y+i*lh+size*.2,(fw-(i===0?size*.9:0)-(i===n-1?size*.9:0))*u,2,col);wMax=Math.max(wMax,fw)});
+  if(src){const sx=o.align==='center'?x:x,a=seg(t,tIn+.6,tIn+1)*(tOut!=null?1-seg(t,tOut,tOut+.3):1);cap(c,src,sx,y+(n-1)*lh+size*.2+34,col,{a,size:12,align:o.align})}}
+
+/* ============================== glitches: white flashes, inversions, tears ============================== */
+const GLX=[[1.25,.1,'slice',1],[3.62,.1,'white',.9],[12.0,.07,'invert'],[16.1,.14,'white',1],[16.12,.08,'slice',1],[19.3,.07,'invert'],[22.0,.06,'slice',.6],[24.45,.07,'invert'],[24.47,.1,'slice',1],[26.0,.06,'slice',.6],[40.2,.18,'white',.9],[40.22,.08,'slice',.8]];
+function glitchFX(c,t,list){for(const [t0,d,k,amt=1] of list){if(t<t0||t>=t0+d)continue;const p=(t-t0)/d,fr=Math.floor(t*60);
+  if(k==='white'){c.fillStyle='#fff';c.globalAlpha=amt*(1-eIn(p));c.fillRect(0,0,W,H);c.globalAlpha=1}
+  else if(k==='invert'){c.globalCompositeOperation='difference';c.fillStyle='#fff';c.fillRect(0,0,W,H);c.globalCompositeOperation='source-over'}
+  else{for(let i=0;i<7;i++){const y=Math.floor(hh(fr*7+i)*H),h=8+Math.floor(hh(fr*13+i)*70),dx=(hh(fr*19+i)-.5)*160*amt;c.drawImage(c.canvas,0,y,W,h,dx,y,W,h)}
+    c.globalCompositeOperation='multiply';c.globalAlpha=.35*amt;c.drawImage(c.canvas,8*amt,0);c.globalAlpha=1;c.globalCompositeOperation='source-over'}}}
+
+/* ============================== 0 · the seal (AI disclosure) ============================== */
+function partHook(c,t,v){
+  const cx=960,cy=470,pre=seg(t,.2,1.25),stamp=t>=1.25,impact=seg(t,1.25,1.45),fade=1-seg(t,3.1,3.4);
+  ['#0047AB','rgba(0,71,171,.7)','rgba(0,71,171,.4)','rgba(0,71,171,.15)',PAPER,SUN].forEach((cl,i)=>{const p=eOut(seg(t,.15+i*.05,.5+i*.05))*fade;if(p<=0)return;
+    c.save();c.fillStyle=cl;c.fillRect(1852,420+i*40-(1-p)*600,16,40);c.strokeStyle='rgba(0,71,171,.25)';c.strokeRect(1852.5,420+i*40-(1-p)*600+.5,15,39);c.restore()});
+  cap(c,'Proof 00 · 飞 / Fly · PV 02',120,48,COBALT,{a:seg(t,.3,.6)*fade});
+  cap(c,'Endnd × Claude Opus 5.5 — 2026.10',1800,48,COBALT,{a:seg(t,.35,.65)*fade,align:'right'});
+  dataBlock(c,120,150,[['Format','1920 × 1080'],['Grid','12 col · 24 · 8'],['Cobalt','Pantone 2728 C'],['Sun','Pantone 123 C'],['Paper','F2ECDF']],COBALT,.55*seg(t,.5,.9)*fade);
+  vtext(c,'Proof 00 >> 飞 / Fly >> Statement >> Before you watch',40,140,COBALT,.45*seg(t,.4,.8)*fade);
+  bigOutline(c,'00',1800,1000,420,COBALT,.12*seg(t,.3,1)*fade,'right');
+  cross(c,cx,cy,300,COBALT,.18*seg(t,.2,.6)*fade);hair(c,120,cy,1680*eOut(seg(t,.1,.7))*fade,1,COBALT,.12);
+  const out=eIn(seg(t,3.15,3.65));
+  const sc=stamp?lerp(1.06,1,eOut(impact))*lerp(1,.04,out):lerp(1.22,1.1,eOut(pre)),sx=lerp(cx,262,eIO(out)),sy=lerp(cy,600,eIO(out));
+  const o={c1:eOut(seg(t,.12,.75)),c2:eOut(seg(t,.3,.9)),ticks:seg(t,.4,1.0),ring:seg(t,.5,1.15),num:seg(t,.45,.7)*(1-seg(t,3.0,3.2)),n:Math.round(60*eOut(seg(t,.55,1.25))),rot:t*.16,sc,a:(stamp?1:.55+.45*pre)*(1-seg(t,3.5,3.66))};
+  if(t<3.66){if(impact>0&&impact<.6){c.save();c.globalCompositeOperation='multiply';seal(c,sx+9,sy-5,230,{...o,col:SUN});c.restore()}
+    seal(c,sx+(impact>0&&impact<.4?(hh(Math.floor(t*60))-.5)*10:0),sy,230,o)}
+  rise(c,t,AI_LINE,cx,820,30,COBALT,1.45,3.0,{w:500,align:'center',st:.018,ls:2});
+  cap(c,AI_SUB,cx,862,COBALT,{a:seg(t,1.9,2.3)*(1-seg(t,3.0,3.2))*.75,align:'center'});
+  if(t>=3.45){const p=eOut(seg(t,3.45,3.75));yDot(c,262,600,.26*p,v)}}
+
+/* ============================== 4 · beginning ============================== */
+function partBegin(c,t,v){
+  yDot(c,262,600,.26,v);
+  yline(c,LINE1,eSine(seg(t,4.0,11.4)),v,1-seg(t,11.4,12));
+  const a1=seg(t,4.5,5)*(1-seg(t,8.3,8.7)),a2=seg(t,8.8,9.3)*(1-seg(t,11.5,11.9));
+  /* 1 — the book */
+  quote(c,t,['书中的文字仿佛有着地心引力，','拉着他往想象中的天空坠落。'],262,330,68,COBALT,4.5,8.35,'— 第一章 · 仲夏夜  Chapter 01 · Midsummer Night');
+  {const a=seg(t,4.6,5.4)*(1-seg(t,8.2,8.7));if(a>0){c.save();c.globalAlpha=a;c.font=`900 520px ${CN}`;c.letterSpacing='-10px';c.strokeStyle='rgba(0,71,171,.5)';c.lineWidth=1.4;c.strokeText('天空',820,1040-(t-4.6)*14);c.restore()}}
+  book(c,COL(10)+20,150,250,330,COBALT,a1*.8,eOut(seg(t,5.6,6.4)));
+  dataBlock(c,COL(10)+20,530,[['Note','01'],['Chapter','仲夏夜'],['Line','0007'],['Page','003']],COBALT,.55*a1);
+  vtext(c,'梦的笔记 — Dream Notes — Vol. 01 — 2026',40,140,COBALT,.4*Math.max(a1,a2));
+  bigOutline(c,'01',1800,1000,300,COBALT,.12*Math.max(a1,a2),'right');
+  /* 2 — the wind on the slope */
+  quote(c,t,['草坡上的风是甜的。'],262,330,76,COBALT,8.8,11.55,'— 第二章 · 最高的地方  Chapter 02 · The Highest Place');
+  {const a=seg(t,8.7,9.5)*(1-seg(t,11.4,11.9));if(a>0){c.save();c.globalAlpha=a;c.font=`900 760px ${CN}`;c.strokeStyle='rgba(0,71,171,.45)';c.lineWidth=1.4;c.strokeText('风',90+(t-8.7)*10,1210);c.restore()}}
+  slope(c,880,640,1040,360,COBALT,a2,eOut(seg(t,9.0,10.2)));
+  if(a2>0){c.save();c.globalAlpha=a2;gliderTop(c,1630,612,.16,-.06,COBALT);c.restore()}
+  wind(c,t,700,430,1220,200,9,COBALT,a2*.8,300);
+  dataBlock(c,COL(10)+20,150,[['Wind','SE → NW'],['Month','七月 · July'],['Place','祖父家的草坡'],['Alt.','0 m']],COBALT,.55*a2);}
+
+/* ============================== 12 · take-off ============================== */
+const YK1=[[12.9,'9'],[13.55,'8'],[14.1,'7'],[14.55,'6'],[14.95,'5'],[15.3,'4'],[15.6,'3'],[15.85,'2'],[16.05,'1']];
+const ALT_K=[[16.6,0],[17.2,.4],[17.6,1],[18.1,2],[18.5,3],[18.85,5],[19.2,6]];
+const altP=t=>{if(t<=ALT_K[0][0])return 0;for(let k=1;k<ALT_K.length;k++){const [t1,p1]=ALT_K[k],[t0,p0]=ALT_K[k-1];if(t<=t1)return lerp(p0,p1,eSine((t-t0)/(t1-t0)))}return 6};
+const altM=p=>p<1?p*1000:p<5?1000*Math.pow(10,p-1):1e7*Math.pow(38.44,p-5);
+const grp=n=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+function partTakeoff(c,t,v){
+  const aR=1-seg(t,16.0,16.3);
+  quote(c,t,['风刚好从身后推过来，他就跑了。'],262,230,56,COBALT,12.1,15.75,'— 第二章 · 最高的地方');
+  /* the run: the only time his take-off shot is shown, small, as a figure */
+  frag(c,t,'july',t-12.4,{x:COL(1),y:400,w:544,h:306},eOut(seg(t,12.3,12.9))*aR,{dir:'right',s:.9,fx:392,fy:540,label:'Fig. 02 — 起飞 · Take-off'});
+  wind(c,t,COL(5),380,780,320,10,COBALT,.7*aR,200+(t-12)*120);
+  {let n=0;for(const [k] of YK1)if(k<=t)n++;yards(c,COL(1),820,96,n,COBALT,seg(t,12.4,12.9),seg(t,16.05,16.8));
+    if(t>=12.9&&t<16.4){c.save();c.globalAlpha=aR;roll(c,t,YK1,1800,960,620,COBALT,{align:'right',dur:.22});c.restore();
+      cap(c,'码 · Yards',1430,330,COBALT,{a:aR});cap(c,String(n).padStart(2,'0')+' / 09',1800,330,COBALT,{a:aR,align:'right'})}}
+  dataBlock(c,COL(9),150,[['Run','九码'],['Wind','from behind'],['Speed',(spAt(t-12)*7).toFixed(1)+' m/s']],COBALT,.5*seg(t,12.5,13)*aR,302);
+  quote(c,t,['还剩一码，没有一码了，','地面已经看不见了。'],262,200,56,COBALT,16.15,19.0,'— 第二章 · 最高的地方',{st:.025});
+  /* the altitude: the number, the decades, flat clouds falling past, the climb in a small square */
+  if(t>=16.6&&t<19.4){const p=altP(t),m=altM(p),a=1-seg(t,19.05,19.35),km=m>=1000;
+    for(let k=0;k<7;k++){const yy=((k*240+(t-16.6)*620)%1500)-200,xx=COL(1+(k*5)%9);c.save();c.globalAlpha=a*.9;c.strokeStyle=COBALT;c.lineWidth=1.2;c.beginPath();c.roundRect(xx,yy,260+hh(k)*240,44,22);c.stroke();c.restore()}
+    text(c,km?grp(Math.round(m/1000)):grp(Math.round(m)),120,880,`600 300px ${DISP}`,COBALT,{a,ls:-12});
+    cap(c,km?'km · 高度 · Altitude':'m · 高度 · Altitude',124,940,COBALT,{a});
+    [['1 km','',1],['10 km','云层 · Clouds',2],['100 km','卡门线 · Kármán line',3],['384 400 km','月球 · The Moon',6]].forEach(([n,l,pp],i)=>{const y=640+i*64,on=p>=pp-.02,al=a*(on?1:.28);
+      hair(c,COL(9),y-34,544,1,COBALT,al*.5);text(c,n,COL(9),y,`600 26px ${DISP}`,COBALT,{a:al});cap(c,l,1800,y-4,COBALT,{a:al,align:'right'})});
+    for(let i=0;i<=60;i++){const y=120+i*14;hair(c,1860,y,i%10?6:16,1,COBALT,a*.5)}
+    const key=t<17.9?'cloud':'deep';frag(c,t,key,key==='cloud'?t-16.9:t-17.9,{x:COL(9),y:120,w:544,h:440},eOut(seg(t,16.6,17.0))*a,{dir:'down',s:1,fx:COL(9)+272,fy:340,label:'Fig. 03 — 上升 · Ascent'})}
+  /* the highest place: the earth in a round window, its orbit drawn around it */
+  const ea=eOut(seg(t,19.3,20.1))*(1-eIn(seg(t,21.6,22)));
+  if(ea>0){stars(c,t,120,100,1680,880,60,COBALT,.5*ea,5);orbit(c,t-19.3,1340,450,330,COBALT,ea*.9,{noDisc:true,ph:2.2})}
+  frag(c,t,'earth',t-19.3,{cx:1340,cy:450,r:330},ea,{s:1,fx:1040,fy:430,label:'Fig. 04 — 地月系的边缘 · 384 400 km'});
+  quote(c,t,['他忽然想，','这大概就是最高的地方。'],120,780,64,COBALT,20.4,21.6,'— 第二章 · 最高的地方  The Highest Place');
+  dataBlock(c,120,150,[['Alt.','384 400 km'],['Wind','—'],['Sound','—'],['Time','T + 00:09']],COBALT,.5*ea)}
+
+/* ============================== 22 · the dream, and November ============================== */
+function partTurn(c,t,v){
+  const a=seg(t,22.05,22.4)*(1-seg(t,24.1,24.4));
+  quote(c,t,['飞翔好像和走路一样简单。'],262,300,76,COBALT,22.15,24.2,'— 第四章 · 鸟群  Chapter 04 · The Flock');
+  flock(c,t,0,420,1920,460,COBALT,a,90,3);
+  for(let k=-9;k<=9;k++){c.save();c.globalAlpha=a*.25;c.strokeStyle=COBALT;c.lineWidth=1;c.beginPath();c.moveTo(960+k*14,900);c.lineTo(960+k*240,1100);c.stroke();c.restore()}
+  hair(c,0,900,W,1,COBALT,a*.5);dataBlock(c,COL(10),150,[['Sky','没有边际'],['Blue','不像真的'],['Gliders','∞']],COBALT,.5*a,302);
+  bigOutline(c,'04',1800,1000,300,COBALT,.1*a,'right');
+  /* November: the word, the calendar, the hill again, the glider tipped on one wing */
+  if(t>=24.45){const b=1-seg(t,25.7,26);rise(c,t,'十一月',112,720,380,COBALT,24.45,25.75,{w:900,st:.06,dur:.45,ls:-6});
+    cap(c,'第五章 — Chapter 05 · November',120,800,COBALT,{a:seg(t,24.8,25.1)*b});
+    calendar(c,t,COL(9),210,74,COBALT,seg(t,24.6,24.9)*b,24.6);
+    slope(c,COL(9),780,600,200,COBALT,.8*b,eOut(seg(t,24.7,25.3)));c.save();c.globalAlpha=b;gliderTop(c,COL(9)+430,778,.12,.5,COBALT);c.restore()}}
+
+/* ============================== 26 · the climax ============================== */
+const CUT_T=[27.6,28.4,29.1,29.75,30.3,30.8,31.25,31.65,32.0,32.3,32.57,32.82,33.04,33.24,33.42,33.58,33.72,33.85,33.97,34.08,34.18,34.28,34.37,34.46,34.54,34.62,34.7,34.77,34.84,34.91,34.96];
+const FLASH=35.0,ONE0=35.3,AFTER0=37.4,P0=40.2;
+const LAYS=[{m:{x:1000,y:140,w:800,h:760},f:{x:120,y:140,w:760,h:520},wx:120,wy:900,al:'left'},
+  {m:{x:120,y:140,w:860,h:640},f:{x:120,y:140,w:830,h:640},wx:1800,wy:900,al:'right'},
+  {m:{x:0,y:0,w:1920,h:1080},f:{x:404,y:160,w:1112,h:560},wx:960,wy:640,al:'center'},
+  {m:{x:120,y:140,w:1680,h:420},f:{x:1114,y:140,w:686,h:420},wx:120,wy:900,al:'left'}];
+const MOTIFS=['glider','orbit','stars','flock','slope','calendar','yards','wind','halftone','screen','book'];
+const FAST_WORDS=['九码','八码','风','七月','十一月','最高的地方','384 400 km','星星','还剩一码','地面','“慢一点。”','又是九码'];
+/* the first thirteen cuts are written out; after that the cuts are generated (seeded), each a little shorter */
+const CUTSPEC=CUT_T.map((t0,i)=>{
+  const fixed=[
+    {bg:'P',motif:'yards',frag:'nov',lay:1,digit:'9',word:'九码，八码。'},
+    {bg:'B',motif:'glider',lay:1,digit:'8',word:'九码，八码。'},
+    {bg:'P',motif:'wind',frag:'nov',lay:1,digit:'7',word:'「第七码，地面没有变软。」',src:'— 第五章'},
+    {bg:'B',motif:'orbit',frag:'earth',lay:0,word:'最高的地方'},
+    {bg:'P',motif:'stars',frag:'deep',lay:3,word:'384 400 km'},
+    {bg:'B',motif:'halftone',lay:0,word:'慢一点。',src:'— 第二章'},
+    {bg:'P',motif:'wind',lay:2,word:'风'},
+    {bg:'B',motif:'yards',lay:3,word:'九码'},
+    {bg:'P',motif:'stars',frag:'stars',lay:0,word:'星星'},
+    {bg:'B',motif:'wind',lay:1,word:'风只是吹',src:'— 第五章'},
+    {bg:'P',motif:'flock',lay:3,word:'抓不住的'},
+    {bg:'B',motif:'slope',lay:0,word:'留不下的'},
+    {bg:'P',motif:'calendar',lay:1,word:'和那天一模一样',src:'— 第五章'}][i];
+  if(fixed)return fixed;
+  const r=k=>hh(i*97+k*13);
+  return{bg:i%2?'P':'B',motif:MOTIFS[Math.floor(r(1)*MOTIFS.length)],lay:Math.floor(r(2)*4),word:r(3)<.8?FAST_WORDS[Math.floor(r(4)*FAST_WORDS.length)]:null,
+    frag:r(5)<.3?['earth','deep','stars','cloud'][Math.floor(r(6)*4)]:i===18?'july':null,digit:i===16?'3':i===19?'2':null,inv:i===21||i===27}});
+/* the camera inside each cut: where it looks, and a long drift with the 0,0,0,1 curve */
+function focusOf(i){const sp=CUTSPEC[i],L=LAYS[sp.digit?1:sp.lay];if(sp.digit)return{x:1150,y:560};if(sp.word){const n=[...sp.word].length,big=n<=3,sz=Math.min(big?(i>=13?320:240):150,1500/n),w=sz*n*(sp.src?.8:1);
+    const x=L.al==='center'?L.wx:L.al==='right'?L.wx-w/2:L.wx+w/2;return{x,y:L.wy-sz*.4}}return{x:L.m.x+L.m.w/2,y:L.m.y+L.m.h/2}}
+const CUTCAM=CUT_T.map((t0,i)=>{const r=k=>hh(i*53+k*7),sp=CUTSPEC[i];let s0=[1,1.12,1.05,1.5,1.1,2.4,1.2,2.9,1.05,1.4,2.1,1.1,1.6][i]??(sp.digit?1.15:1+r(1)*2.4);
+  const f=focusOf(i),k=1-1/s0;return{cx:lerp(960,f.x,Math.min(1,k*1.4)),cy:lerp(540,f.y,Math.min(1,k*1.4)),s0,s1:s0*(1+(r(4)-.3)*.22),r:(r(5)-.5)*.07,dx:(r(6)-.5)*(140/s0)}});
+function cutAt(t){let i=-1;for(let k=0;k<CUT_T.length;k++)if(CUT_T[k]<=t)i=k;return t<FLASH?i:-1}
+function cutCam(t,i){const t0=CUT_T[i],d=(CUT_T[i+1]??FLASH)-t0,u=EZ.E0((t-t0)/Math.max(.3,d*1.6)),q=CUTCAM[i],s=lerp(q.s0,q.s1,u),hw=960/s,hh2=540/s;
+  return{cx:clamp(q.cx+q.dx*u,hw,1920-hw),cy:clamp(q.cy,hh2,1080-hh2),s,r:q.r*(1-u*.5)}}
+function bgAt(t){if(t>=27.6&&t<FLASH){const i=cutAt(t);return i>=0&&CUTSPEC[i].bg==='B'?COBALT:PAPER}return PAPER}
+function drawMotif(c,t,lt,m,b,col,a){const cx=b.x+b.w/2,cy=b.y+b.h/2,R=Math.min(b.w,b.h);
+  if(m==='glider')gliderTop(c,cx,cy,R/700,-.12+lt*.05,col,col===COBALT?PAPER:COBALT);
+  else if(m==='orbit')orbit(c,t,cx,cy,R*.2,col,a);
+  else if(m==='stars')stars(c,t,b.x,b.y,b.w,b.h,50,col,a,Math.floor(t));
+  else if(m==='flock')flock(c,t,b.x,b.y,b.w,b.h,col,a,120,Math.floor(t*3));
+  else if(m==='slope')slope(c,b.x,b.y+b.h*.3,b.w,b.h*.7,col,a,1);
+  else if(m==='calendar')calendar(c,t+5,b.x+20,b.y+40,Math.min(70,b.w/7.5),col,a,0);
+  else if(m==='yards')yards(c,b.x,cy-50,Math.min(110,b.w/9-24),Math.floor(lt*24)%10,col,a);
+  else if(m==='wind')wind(c,t,b.x,b.y,b.w,b.h,14,col,a,520);
+  else if(m==='halftone')halftone(c,cx,cy,R*.42,col,a,18);
+  else if(m==='screen')screenBlock(c,b.x,b.y,b.w,b.h,col,a,20);
+  else if(m==='book')book(c,cx-R*.3,cy-R*.4,R*.6,R*.8,col,a,1)}
+function partClimax(c,t,v){
+  if(t<27.6){
+    quote(c,t,['风向变了，从背后推。'],262,330,76,COBALT,26.1,27.45,'— 第五章 · 十一月  The second time');
+    wind(c,t,0,460,1920,300,14,COBALT,.8*seg(t,26.1,26.6),220+(t-26)*240);
+    yards(c,COL(1),820,96,0,COBALT,seg(t,26.3,26.8));
+    dataBlock(c,COL(10),150,[['Month','十一月'],['Wind','from behind'],['Run','02']],COBALT,.5*seg(t,26.3,26.7),302);
+    frag(c,t,'nov',t-26.2,{x:COL(10),y:400,w:402,h:300},eOut(seg(t,26.4,26.9)),{dir:'up',s:.75,fx:COL(10)+201,fy:550,label:'Fig. 06 — 十一月 · November'});return}
+  const i=cutAt(t);if(i<0)return;const sp=CUTSPEC[i],t0=CUT_T[i],lt=t-t0,fg=sp.bg==='B'?PAPER:COBALT,L=LAYS[sp.digit?1:sp.lay],open=seg(lt,0,.1),fast=i>=13;
+  gridLines(c,fg,.14);
+  /* decoration, every cut: a big faint index number, a figure line, data, crosses */
+  bigOutline(c,String(i+7).padStart(2,'0'),sp.lay===0?120:1800,sp.lay===0?980:300,fast?520:340,fg,.16,sp.lay===0?'left':'right');
+  dataBlock(c,sp.lay===1?COL(8):COL(1),150,[['Cut',String(i+1).padStart(2,'0')+' / '+CUT_T.length],['T',(t0-26).toFixed(2)+' s'],['Yard',sp.digit||'—']],fg,.55,240);
+  cross(c,1660,880,40,fg,.4);vtext(c,'飞 / Fly — 第五章 · 十一月 — the second time — '+String(i).padStart(3,'0'),40,140,fg,.4);
+  drawMotif(c,t,lt,sp.motif,L.m,fg,(sp.lay===2?.35:.95)*open);
+  if(sp.frag){const f=L.f,dirs=['right','up','left','down'];frag(c,t,sp.frag,lt+i*.37,f,seg(lt,0,.12),{dir:dirs[i%4],s:sp.frag==='nov'||sp.frag==='july'?.7:1,fx:f.x+f.w/2,fy:f.y+f.h/2,label:fast?'':`Fig. ${String(7+i).padStart(2,'0')} — ${sp.frag==='nov'?'十一月':'七月'}`,lc:fg})}
+  if(sp.digit){const ys=CUTSPEC.map((q,k)=>q.digit?[CUT_T[k],q.digit]:null).filter(q=>q&&q[0]<=t);roll(c,t,ys,1800,960,fast?900:740,fg,{align:'right',dur:fast?.06:.18});cap(c,'码 · Yards — 第二次 · Again',1300,250,fg,{})}
+  if(sp.word){const w=sp.word,big=[...w].length<=3,sz=Math.min(big?(fast?320:240):150,1500/[...w].length);
+    if(i<=1)rise(c,t,w,120,960,96,fg,27.65,99,{w:900,st:.05,dur:.35});
+    else if(sp.src)quote(c,t,[w.replace(/[「」]/g,'')],L.al==='right'?Math.max(120,1800-sz*[...w].length):L.wx+sz,L.wy,sz*.8,fg,t0+.02,null,sp.src,{w:900,st:.02});
+    else rise(c,t,w,L.wx,L.wy,sz,fg,t0+.01,99,{w:900,st:fast?.01:.025,dur:fast?.08:.2,align:L.al})}
+  if(sp.inv&&lt<.05){c.save();c.globalCompositeOperation='difference';c.fillStyle='#fff';c.fillRect(-2000,-2000,6000,5000);c.restore()}}
+
+/* ============================== 35 · white. the one. afterwards. the poster ============================== */
+function partOne(c,t){text(c,'1',960,560,`500 30px ${DISP}`,COBALT,{align:'center'});cap(c,'码 · Yard',960,592,COBALT,{align:'center',a:.6});
+  hair(c,960-60*eOut(seg(t,35.8,37)),620,120*eOut(seg(t,35.8,37)),1,COBALT,.4)}
+function partAfter(c,t,v){const a=seg(t,AFTER0,AFTER0+.8)*(1-seg(t,P0-.3,P0));
+  stars(c,t,120,100,1680,880,46,COBALT,.45*a,9);
+  quote(c,t,['星星还在，风还在。'],960,560,84,COBALT,AFTER0+.35,P0-.4,'— 第五章 · 十一月  November',{align:'center',st:.06});
+  wind(c,t,0,700,1920,160,6,COBALT,.4*a,120);vtext(c,'飞 / Fly — 后来 — Afterwards',40,140,COBALT,.4*a)}
+function partPoster(c,t,v){const lt=t-P0;
+  gridLines(c,COBALT,.12*seg(lt,0,.5));
+  const k=.86,ox=120-40*k,oy=150-80*k;
+  c.save();c.translate(ox,oy);c.scale(k,k);c.fillStyle=COBALT;
+  [[0,.15,.75,'r'],[1,.45,1.2,'d'],[2,.75,1.25,'r']].forEach(([i,a,b,d])=>{const p=eIO(seg(lt,a,b));if(p<=0)return;c.save();c.beginPath();
+    if(d==='r')c.rect(-100,-100,(1200)*p,1200);else c.rect(-100,-100,1200,1200*p);c.clip();c.fill(GLYPH_PARTS[i]);c.restore()});
+  c.restore();
+  const dx=ox+DOTC.x*k,dy=oy+DOTC.y*k,lp=eIO(seg(lt,.5,1.5));
+  yline(c,LINE2.map(q=>({x:q.x+(dx-700),y:q.y+(dy-470)})),lp,v,1-seg(lt,2.2,3.0));
+  if(lt>=1.45)yDot(c,dx,dy,k*(1+.12*(1-seg(lt,1.45,1.75))),v);
+  const x=COL(8),da=seg(lt,1.6,2.2);
+  cap(c,'飞 / Fly — 一部视觉小说',x,150,COBALT,{a:seg(lt,1.1,1.4)});hair(c,x,166,686*eOut(seg(lt,1.0,1.6)),1,COBALT);
+  rise(c,t,'Fly',x-8,350,200,COBALT,P0+1.15,null,{f:DISP,w:600,ls:-8,st:.07});
+  rise(c,t,'一部视觉小说',x,430,44,COBALT,P0+1.35,null,{w:700,ls:3});cap(c,'A Visual Novel',x,466,COBALT,{a:seg(lt,1.6,1.9)});
+  rise(c,t,TAGLINE,x,600,32,COBALT,P0+1.6,null,{w:500,ls:1.5,st:.03});
+  hair(c,x,760,686*eOut(seg(lt,1.7,2.2)),1,COBALT);
+  {const w=rise(c,t,'试玩招募中',x,850,52,COBALT,P0+1.9,null,{w:900,ls:2});if(w&&lt>1.5){c.save();c.fillStyle=SUN;c.globalAlpha=seg(lt,2.0,2.2);c.beginPath();c.arc(x+w+24,830,9,0,6.2832);c.fill();c.restore()}}
+  cap(c,'Playtest open',x,884,COBALT,{a:seg(lt,2.1,2.4)});
+  rise(c,t,'Windows / Android',x,950,32,COBALT,P0+2.1,null,{f:DISP,w:500,ls:.5});
+  cap(c,'Endnd × Claude Opus 5.5 · 2026',x,1032,COBALT,{a:seg(lt,2.3,2.6)*.8});
+  vtext(c,'飞 / Fly — A Visual Novel — Vol. 01 — Windows · Android — 2026',40,140,COBALT,.4*da);
+  dataBlock(c,COL(8),640,[['Chapters','05'],['Endings','02'],['Version','0.1 · playtest']],COBALT,.45*da,320);
+  bigOutline(c,'02',1800,700,240,COBALT,.08*da,'right');
+  if(lt>=2.35){const im=seg(lt,2.35,2.5);seal(c,1720,950,92,{sc:lerp(1.3,1,eOut(im)),a:im,rot:lt*.1,n:60});if(im<1&&im>0){c.save();c.globalCompositeOperation='multiply';seal(c,1726,946,92,{col:SUN,a:1-im,rot:lt*.1});c.restore()}}}
+
+/* ============================== chrome, the camera, the cut ============================== */
+const SECT=[[4,12,'01','开端','Beginning'],[12,22,'02','起飞','Take-off'],[22,26,'03','梦','The dream'],[26,FLASH,'04','十一月','November'],[AFTER0,P0,'05','后来','Afterwards']];
+function chrome(c,t,fg){for(const [a,b,n,zh,en] of SECT){const al=seg(t,a+.2,a+.5)*(1-seg(t,b-.25,b));if(al<=0)continue;
+  cap(c,'飞 / Fly — PV 02',120,48,fg,{a:al});cap(c,`${n} — ${zh} · ${en}`,1800,48,fg,{a:al,align:'right'});cap(c,`${n} / 05`,1800,1044,fg,{a:al*.7,align:'right'});
+  const tc=Math.floor(t*24),ss=Math.floor(t);cap(c,`TC 00:00:${String(ss).padStart(2,'0')}:${String(tc%24).padStart(2,'0')}`,120,1044,fg,{a:al*.5})}}
+function render(t){
+  t=clamp(t,0,DUR);reset(X);
+  const bg=bgAt(t);X.fillStyle=bg;X.fillRect(0,0,W,H);if(!ready)return;
+  const v=((Math.floor(t*12)%3)+3)%3,fg=bg===COBALT?PAPER:COBALT,ci=cutAt(t);
+  const cam=ci>=0?cutCam(t,ci):camKeys(t);
+  X.save();X.translate(960,540);X.rotate(cam.r);X.scale(cam.s,cam.s);X.translate(-cam.cx,-cam.cy);
+  if(t<4){gridLines(X,COBALT,.08*seg(t,.1,.6));partHook(X,t,v)}
+  else if(t<12){gridLines(X,COBALT,.08);partBegin(X,t,v)}
+  else if(t<22){gridLines(X,COBALT,.08);partTakeoff(X,t,v)}
+  else if(t<26){gridLines(X,COBALT,.08);partTurn(X,t,v)}
+  else if(t<FLASH){if(t<27.6)gridLines(X,COBALT,.08);partClimax(X,t,v)}
+  else if(t<AFTER0){if(t>=ONE0)partOne(X,t)}
+  else if(t<P0){gridLines(X,COBALT,.08*seg(t,AFTER0,AFTER0+1));partAfter(X,t,v)}
+  else partPoster(X,t,v);
+  X.restore();reset(X);
+  chrome(X,t,fg);
+  const jit=(t>=1.25&&t<1.4)||(ci>=0&&t-CUT_T[ci]<.06);
+  if(t<FLASH)regMarks(X,fg,seg(t,.02,.6),jit);else if(t>=P0)regMarks(X,COBALT,seg(t,P0,P0+.6),t>=P0+2.35&&t<P0+2.5);
+  /* the glitches: the fixed ones, a tear on every cut of the climax, and the white before the one */
+  const gl=[...GLX];if(ci>=0)gl.push([CUT_T[ci],ci>=13?.05:.06,'slice',lerp(.4,1.4,ci/CUT_T.length)]);
+  gl.push([FLASH,ONE0-FLASH,'white',1]);
+  if(t>=FLASH&&t<FLASH+.1){X.fillStyle='#fff';X.fillRect(0,0,W,H)}
+  glitchFX(X,t,gl);reset(X);
+  X.globalCompositeOperation='multiply';X.globalAlpha=.45;X.drawImage(grainC,0,0);reset(X)}
+
+/* ============================== sound: one deterministic offline track ============================== */
+const AU={buf:null,ctx:null,src:null,gain:null,muted:false};
+async function buildAudio(){
+  const sr=44100,oc=new OfflineAudioContext(2,Math.ceil(sr*DUR),sr),rr=mulberry32(2028);
+  const gn=(v,to)=>{const n=oc.createGain();n.gain.value=v;n.connect(to);return n};
+  const nb=oc.createBuffer(1,sr*3,sr);{const d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=rr()*2-1}
+  const irOf=sec=>{const n=Math.floor(sr*sec),b=oc.createBuffer(2,n,sr);for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);let lp=0;for(let i=0;i<n;i++){lp=lp*.55+(rr()*2-1)*.45;d[i]=lp*Math.pow(1-i/n,2.4)}}return b};
+  /* two chains: everything up to the white flash dies with it (its reverb too); the exhale and the ending live on their own */
+  const chain=(ir)=>{const m=gn(1,oc.destination),rev=oc.createConvolver();rev.buffer=irOf(ir);rev.connect(gn(.55,m));
+    const busIn=(dry,send)=>{const n=oc.createGain();n.connect(gn(dry,m));n.connect(gn(send,rev));return n};return{m,pad:busIn(.6,.9),sfx:busIn(.7,.35),amb:gn(1,m)}};
+  const A=chain(4.2),Bc=chain(5.5);
+  A.m.gain.setValueAtTime(1,FLASH+.02);A.m.gain.linearRampToValueAtTime(0,FLASH+.07);
+  Bc.m.gain.setValueAtTime(0,0);Bc.m.gain.setValueAtTime(1,FLASH+.3);
+  const ch=t=>t<FLASH?A:Bc;
+  const env=(g,t0,a,peak,dec)=>{g.gain.setValueAtTime(.0001,t0);g.gain.exponentialRampToValueAtTime(Math.max(peak,.0002),t0+a);g.gain.exponentialRampToValueAtTime(.0001,t0+a+dec)};
+  const tone=(f,dur,{type='sine',g=.2,t=0,to,f2,a=.004}={})=>{const o=oc.createOscillator(),n=oc.createGain();o.type=type;o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+dur);o.connect(n);n.connect(to||ch(t).sfx);env(n,t,a,g,dur);o.start(t);o.stop(t+a+dur+.05)};
+  const hiss=(dur,{type='bandpass',f=2000,f2,q=1,g=.15,t=0,a=.004,to}={})=>{const s=oc.createBufferSource(),fl=oc.createBiquadFilter(),n=oc.createGain();s.buffer=nb;s.loop=true;fl.type=type;fl.frequency.setValueAtTime(f,t);if(f2)fl.frequency.exponentialRampToValueAtTime(f2,t+dur);fl.Q.value=q;
+    s.connect(fl);fl.connect(n);n.connect(to||ch(t).sfx);env(n,t,a,g,dur);s.start(t,rr()*1.5);s.stop(t+a+dur+.05)};
+  const bell=(f,g,t)=>[[1,1],[2.76,.3],[5.4,.1]].forEach(([m,a])=>tone(f*m,1.9/m,{g:g*a,t}));
+  const swell=(t0,t1,g=.08,f0=300,f1=3200)=>{const s=oc.createBufferSource(),fl=oc.createBiquadFilter(),n=oc.createGain();s.buffer=nb;s.loop=true;fl.type='bandpass';fl.Q.value=.7;fl.frequency.setValueAtTime(f0,t0);fl.frequency.exponentialRampToValueAtTime(f1,t1);
+    n.gain.setValueAtTime(0,t0);n.gain.linearRampToValueAtTime(g,t1-.02);n.gain.linearRampToValueAtTime(0,t1+.03);s.connect(fl);fl.connect(n);n.connect(ch(t0).sfx);s.start(t0,rr()*1.5);s.stop(t1+.1)};
+  const paper=t=>hiss(.16,{f:1300,f2:2400,q:.8,g:.07,a:.02,t});
+  const flick=(t,g=.07)=>hiss(.06,{type:'highpass',f:3200,g,t});
+  const whoosh=(t,g=.09)=>hiss(.3,{f:500,f2:2800,q:1.2,g,a:.05,t});
+  const tick=(t,i=0)=>{tone(620*Math.pow(1.06,i),.08,{type:'triangle',g:.08,t});hiss(.02,{type:'highpass',f:3000,g:.035,t})};
+  const pencil=t=>hiss(.03+rr()*.02,{f:2300+rr()*1700,q:1.3,g:.01+rr()*.012,a:.003,t});
+  const zap=(t,g=.04)=>{for(let k=0;k<4;k++)tone(300+rr()*2400,.015,{type:'square',g,t:t+k*.014});hiss(.05,{type:'highpass',f:5000,g:g*1.2,t})};
+  /* —— the pads, one line through the piece; on chain A until the flash —— */
+  const padLine=(C,keys,gkeys)=>{const lp=oc.createBiquadFilter();lp.type='lowpass';lp.Q.value=.7;lp.connect(C.pad);keys.forEach(([t,f],i)=>i?lp.frequency.linearRampToValueAtTime(f,t):lp.frequency.setValueAtTime(f,t));
+    const g=oc.createGain();g.connect(lp);gkeys.forEach(([t,v],i)=>i?g.gain.linearRampToValueAtTime(v,t):g.gain.setValueAtTime(v,t));return g};
+  const padA=padLine(A,[[0,500],[1.25,500],[4,1100],[12,1500],[16.6,2400],[19.3,900],[22,2600],[24.4,700],[26,900],[34.95,6400]],[[0,0],[1.2,0],[1.3,1],[4,.8],[12,1],[16.6,1.2],[19.3,.35],[22,1],[24.4,.9],[26,.9],[34.95,2.8]]);
+  const padB=padLine(Bc,[[0,1200],[AFTER0,1000],[P0,1600],[DUR,1400]],[[0,1],[DUR,1]]);
+  const chord=(g,t0,t1,notes,att,rel)=>{for(const n of notes.split(' ')){const f=HZ(NOTE(n));for(const dt of [-8,0,8]){const o=oc.createOscillator(),gg=oc.createGain();o.type=dt?'sawtooth':'triangle';o.frequency.value=f;o.detune.value=dt;const pk=(dt?.012:.03)*(f<120?1.4:1);
+    gg.gain.setValueAtTime(0,t0);gg.gain.linearRampToValueAtTime(pk,t0+att);gg.gain.setValueAtTime(pk,t1);gg.gain.linearRampToValueAtTime(0,t1+rel);o.connect(gg);gg.connect(g);o.start(t0);o.stop(t1+rel+.05)}}};
+  const CHA=[[1.25,'D2 A2 D3',4.05],[4,'D3 A3 E4 F#4'],[8.7,'G2 D3 B3 F#4'],[12,'B2 F#3 A3 D4'],[16.6,'A2 E3 A3 C#4 E4'],[19.3,'E4 A4 B4'],[22,'G3 D4 F#4 B4'],[24.4,'E2 B2 D3 G3'],
+    [26,'E2 B2 E3 G3 B3'],[27.6,'C2 G2 C3 E3 B3 G4'],[29.1,'D2 A2 D3 F#3 A3 E4'],[30.8,'B1 F#2 B2 D3 F#3 A3 D4'],[32.3,'G1 D2 G2 B2 D3 F#3 B3 D4 A4'],[33.72,'A1 E2 A2 C#3 E3 A3 C#4 E4 B4']];
+  CHA.forEach(([t0,n,end],i)=>{const t1=end??(CHA[i+1]?CHA[i+1][0]:FLASH+.05);chord(padA,t0,t1,n,i===0?.05:t0>=26?.6:1.4,t1>=FLASH?.02:2.2)});
+  /* —— the exhale: held breath for a beat, then out — air falling through the band, a low sigh of the same D, settling —— */
+  {const t0=FLASH+.35;hiss(2.6,{f:2600,f2:220,q:.6,g:.2,a:.45,t:t0,to:Bc.sfx});hiss(2.2,{type:'lowpass',f:900,f2:120,q:.4,g:.12,a:.3,t:t0+.1,to:Bc.sfx});
+    tone(73.42,3.4,{g:.16,f2:61.7,a:.5,t:t0,to:Bc.sfx});
+    for(const n of ['D3','A3','F#4','A4']){const o=oc.createOscillator(),g=oc.createGain();o.type='triangle';o.frequency.setValueAtTime(HZ(NOTE(n)),t0);o.frequency.exponentialRampToValueAtTime(HZ(NOTE(n))*.985,t0+3);
+      g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(.022,t0+.5);g.gain.exponentialRampToValueAtTime(.0005,t0+3.6);o.connect(g);g.connect(Bc.pad);o.start(t0);o.stop(t0+3.7)}}
+  [[AFTER0,'D3 A3 E4 F#4',P0],[P0,'G2 D3 B3 F#4',P0+1.2],[P0+1.2,'D2 A2 D3 F#3 A3 E4',DUR-.2]].forEach(([t0,n,t1])=>chord(padB,t0,t1,n,1.4,t1>=DUR-.3?.2:2.2));
+  for(const [t0,t1,fs,C] of [[19.3,22.2,[1318.5,1760,2637],A],[P0+1.2,DUR,[1174.7,1760,2349.3],Bc]])for(const f of fs){const o=oc.createOscillator(),g=oc.createGain();o.frequency.value=f;g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(.006,t0+1.2);g.gain.setValueAtTime(.006,t1-1);g.gain.linearRampToValueAtTime(0,t1);o.connect(g);g.connect(C.pad);o.start(t0);o.stop(t1+.05)}
+  const box=(n,t,g=.09)=>{const C=ch(t);[[1,1],[2.76,.3],[5.4,.1]].forEach(([m,a])=>{const o=oc.createOscillator(),gg=oc.createGain();o.frequency.value=293.66*Math.pow(2,n/12)*m;gg.gain.setValueAtTime(.0001,t);gg.gain.exponentialRampToValueAtTime(g*a,t+.004);gg.gain.exponentialRampToValueAtTime(.0001,t+2.2/m);o.connect(gg);gg.connect(C.pad);o.start(t);o.stop(t+2.3/m)})};
+  const PH=MEL.slice(0,11);
+  for(const [k,n] of PH)box(n,4.3+k*.46);
+  for(const [k,n] of PH.slice(0,8))box(n,AFTER0+.2+k*.46,.08);
+  [[P0+1.2,19],[P0+1.55,16],[P0+1.9,14],[P0+2.35,12],[P0+2.35,0]].forEach(([t,n],i)=>box(n,t,i>3?.06:.085));
+  /* wind, each chain its own */
+  const windOn=(C,keys)=>{const s=oc.createBufferSource(),wf=oc.createBiquadFilter(),lfo=oc.createOscillator(),lg=oc.createGain(),g=gn(0,C.amb);s.buffer=nb;s.loop=true;wf.type='lowpass';wf.frequency.value=440;wf.Q.value=.3;lfo.frequency.value=.08;lg.gain.value=240;
+    lfo.connect(lg);lg.connect(wf.frequency);s.connect(wf);wf.connect(g);s.start(0);lfo.start(0);keys.forEach(([t,v])=>g.gain.linearRampToValueAtTime(v,t))};
+  windOn(A,[[0,0],[3.6,0],[5,.12],[8.7,.3],[12,.32],[16.6,.4],[19.3,0],[22,.04],[24.4,.32],[27.6,.45],[34.95,.75]]);
+  windOn(Bc,[[0,0],[AFTER0,0],[AFTER0+.9,.22],[P0,.12],[DUR,.05]]);
+  /* —— the hook —— */
+  swell(.05,1.25,.11,200,4000);tone(110,1.2,{g:.05,f2:220,a:1.1,t:.05});
+  tone(52,2.6,{g:.5,f2:40,t:1.25});hiss(.5,{type:'lowpass',f:900,f2:200,g:.25,t:1.25});hiss(.06,{type:'highpass',f:2600,g:.12,t:1.25});bell(587.33,.05,1.3);bell(880,.035,1.42);zap(1.25,.03);
+  for(let k=0;k<6;k++)tick(.35+k*.12,k);
+  [1.5,1.62,1.74].forEach(t=>paper(t));swell(3.15,3.6,.06,3000,500);tone(1760,.05,{type:'triangle',g:.05,t:3.62});hiss(.2,{type:'highpass',f:4000,g:.06,t:3.62});
+  /* —— beginning —— */
+  {const t0=4.0,dur=7.2,s=oc.createBufferSource(),fl=oc.createBiquadFilter(),g=oc.createGain();s.buffer=nb;s.loop=true;fl.type='bandpass';fl.frequency.value=3200;fl.Q.value=.6;s.connect(fl);fl.connect(g);g.connect(A.sfx);
+    g.gain.setValueAtTime(0,t0);for(let k=0;k<dur;k+=.05)g.gain.setValueAtTime((.004+rr()*.016)*(1-k/dur*.6),t0+k);g.gain.setValueAtTime(0,t0+dur);s.start(t0);s.stop(t0+dur+.1)}
+  for(const [t0,n] of [[4.5,14],[4.75,13],[8.8,10],[12.1,16],[16.15,11],[16.4,9],[19.6,6],[19.85,11],[22.15,13],[26.1,11],[AFTER0+.35,10]])for(let k=0;k<n;k++)pencil(t0+k*.035);
+  [4.4,8.7,9.2,11.5].forEach(t=>paper(t));whoosh(4.48,.06);whoosh(7.0,.05);
+  /* —— take-off —— */
+  YK1.forEach(([t],i)=>tick(t,i));whoosh(12.0);zap(12.0,.03);hiss(3.6,{type:'lowpass',f:180,f2:700,q:.5,g:.07,a:1.2,t:12.4});
+  hiss(.3,{type:'highpass',f:3000,g:.1,t:16.1});whoosh(16.12,.1);
+  swell(16.1,19.25,.07,250,5000);tone(220,3.1,{g:.035,f2:880,a:2.5,t:16.2});hiss(1.4,{type:'lowpass',f:260,f2:1300,q:.3,g:.08,a:.5,t:16.9});
+  zap(19.3,.025);bell(1318.5,.03,19.4);bell(1760,.025,19.6);bell(2349.3,.02,19.8);
+  /* —— the dream and November —— */
+  for(let k=0;k<10;k++)tone(2300+rr()*1300,.07,{g:.022,f2:3300,t:22.3+k*.15+rr()*.05});zap(22.0,.02);whoosh(22.05,.06);
+  zap(24.45,.035);hiss(.9,{type:'lowpass',f:300,f2:80,g:.14,a:.01,t:24.45});tone(73.4,1.6,{g:.12,f2:60,t:24.45});paper(24.45);
+  for(let d=0;d<9;d++)pencil(24.6+d*.05);
+  /* —— the climax: the long breath in —— */
+  whoosh(26.05,.07);zap(26.0,.02);
+  swell(26,FLASH,.16,160,7000);swell(31,FLASH,.08,900,9000);tone(146.8,9,{g:.03,f2:587,a:8.5,t:26.1});tone(73.4,9,{g:.05,f2:110,a:8.6,t:26.1});
+  CUT_T.forEach((t0,i)=>{const sp=CUTSPEC[i],k=i/CUT_T.length;flick(t0,.05+k*.05);hiss(.2,{f:700+i*90,f2:3200,q:.9,g:.025+k*.04,a:.02,t:t0});if(i%2===0)zap(t0,.012+k*.02);
+    if(sp.digit)tick(t0,9-(+sp.digit));if(sp.word&&i<13)for(let q=0;q<Math.min(6,[...sp.word].length);q++)pencil(t0+q*.025);if(i%3===0)bell(880*Math.pow(1.122,i%5),.016,t0)});
+  [27.65,27.7,27.75,27.8,27.85,27.9].forEach(t=>pencil(t));
+  /* the white: a bright snap, then nothing */
+  hiss(.09,{type:'highpass',f:2500,g:.35,a:.002,t:FLASH});tone(2093,.06,{type:'triangle',g:.12,t:FLASH});
+  /* —— afterwards, the poster —— */
+  paper(P0+.05);hiss(.25,{type:'highpass',f:3000,g:.08,t:P0});zap(P0,.025);[P0+.15,P0+.45,P0+.75].forEach(t=>hiss(.35,{f:700,f2:1800,q:.8,g:.04,a:.08,t}));
+  {const t0=P0+.5,dur=1.0,s=oc.createBufferSource(),fl=oc.createBiquadFilter(),g=oc.createGain();s.buffer=nb;s.loop=true;fl.type='bandpass';fl.frequency.value=3200;fl.Q.value=.6;s.connect(fl);fl.connect(g);g.connect(Bc.sfx);
+    g.gain.setValueAtTime(0,t0);for(let k=0;k<dur;k+=.045)g.gain.setValueAtTime(.008+rr()*.03,t0+k);g.gain.setValueAtTime(0,t0+dur);s.start(t0);s.stop(t0+dur+.1)}
+  [P0+1.15,P0+1.35,P0+1.6,P0+1.9,P0+2.1].forEach(t=>paper(t));tone(150,.2,{g:.22,f2:50,t:P0+2.35});hiss(.06,{type:'lowpass',f:1200,g:.08,t:P0+2.35});
+  const buf=await oc.startRendering();let pk=0;for(let c2=0;c2<2;c2++){const d=buf.getChannelData(c2);for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>pk)pk=a}}
+  /* a soft limiter: the quiet parts come up, the peaks are rounded off, nothing clips */
+  const kk=1/Math.max(1e-6,pk),drive=2.2,th=Math.tanh(drive);for(let c2=0;c2<2;c2++){const d=buf.getChannelData(c2);for(let i=0;i<d.length;i++)d[i]=.89*Math.tanh(d[i]*kk*drive)/th}
+  {const n=Math.floor(sr*.3);for(let c2=0;c2<2;c2++){const d=buf.getChannelData(c2);for(let i=0;i<n;i++)d[d.length-1-i]*=i/n}}
+  return buf}
+
+/* ============================== the clock (same as PV 01) ============================== */
+let t=0,playing=false,clk0=0,t0=0,started=false,hudForced=false;
+const hud=document.getElementById('hud');
+const now=()=>AU.clock==='audio'?AU.ctx.currentTime:performance.now()/1000;
+function startAudio(at){stopAudio();if(!AU.ctx||!AU.buf||at>=DUR)return;const s=AU.ctx.createBufferSource();s.buffer=AU.buf;s.connect(AU.gain);s.start(0,at);AU.src=s}
+function stopAudio(){if(AU.src){try{AU.src.stop()}catch(e){}AU.src.disconnect();AU.src=null}}
+function syncAudio(){if(!playing||!AU.ctx||AU.ctx.state!=='running'||!AU.buf)return;const cur=clamp(t0+(now()-clk0),0,DUR);AU.clock='audio';t0=cur;clk0=AU.ctx.currentTime;startAudio(cur)}
+function play(){if(!ready||playing)return;if(t>=DUR)t=0;
+  if(!AU.ctx){try{AU.ctx=new AudioContext();AU.gain=AU.ctx.createGain();AU.gain.gain.value=AU.muted?0:1;AU.gain.connect(AU.ctx.destination)}catch(e){AU.ctx=null}}
+  playing=true;started=true;AU.clock='perf';clk0=now();t0=t;
+  if(AU.ctx){if(AU.ctx.state==='running')syncAudio();else AU.ctx.resume().then(syncAudio).catch(()=>{})}
+  updHud();requestAnimationFrame(loop)}
+function pause(){if(!playing)return;t=clamp(t0+(now()-clk0),0,DUR);playing=false;stopAudio();render(t);updHud()}
+function seek(x){t=clamp(+x||0,0,DUR);if(playing){clk0=now();t0=t;if(AU.clock==='audio')startAudio(t)}render(t);updHud();return t}
+function loop(){if(!playing)return;t=t0+(now()-clk0);if(t>=DUR){t=DUR;playing=false;stopAudio();render(t);updHud();return}render(t);requestAnimationFrame(loop)}
+function updHud(){const show=hudForced||(!started&&!playing);hud.hidden=!show;if(!show||!ready)return;
+  hud.textContent=`飞 Fly · PV 02 — ${t.toFixed(2)} / ${DUR.toFixed(1)} s${AU.buf?'':' · 音轨生成中'}\n空格 播放/暂停 · ← → 逐帧 (Shift 1 s) · 0 回到开头 · M 静音${AU.muted?'（已静音）':''} · W 导出音轨 · H 隐藏提示`}
+function fit(){const c=document.getElementById('pv'),s=Math.min(innerWidth/W,innerHeight/H);c.style.transform=`translate(${(innerWidth-W*s)/2}px,${(innerHeight-H*s)/2}px) scale(${s})`}
+addEventListener('resize',fit);fit();
+function saveWav(){if(!AU.buf)return;const a=document.createElement('a');a.href=URL.createObjectURL(wavOf(AU.buf));a.download='fly_pv02rev_audio.wav';document.body.appendChild(a);a.click();a.remove()}
+addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();playing?pause():play()}
+  else if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();if(playing)pause();seek(t+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?1:1/60))}
+  else if(e.key==='0'||e.key==='Home'){seek(0)}
+  else if(e.key==='m'||e.key==='M'){AU.muted=!AU.muted;if(AU.gain)AU.gain.gain.value=AU.muted?0:1;updHud()}
+  else if(e.key==='w'||e.key==='W'){saveWav()}
+  else if(e.key==='h'||e.key==='H'){hudForced=!hudForced;if(!hudForced)started=true;updHud()}
+});
+
+/* ============================== build ============================== */
+const pvReady=(async()=>{
+  const setHud=s=>{hud.textContent=s};
+  const allTxt=AI_LINE+AI_SUB+TAGLINE+SEAL_RING+'书中的文字仿佛有着地心引力，拉着他往想象中的天空坠落。草坡上的风是甜的。风刚好从身后推过来，他就跑了。还剩一码，没有一码了，地面已经看不见了。他忽然想，这大概就是最高的地方。飞翔好像和走路一样简单。十一月风向变了，从背后推。九码，八码。第七码，地面没有变软。“慢一点。”星星还在，风还在。一部视觉小说试玩招募中天空码高度云层卡门线月球地月系的边缘七月祖父家的草坡起飞上升梦第一二四五章仲夏夜最高的地方鸟群后来开端约AI辅助制作故事与文本由作者完成「」风只是吹抓不住的留不下的和那天一模一样又是九码八码地球月球没有边际不像真的从背后七月十一月祖父家的草坡东南西北';
+  setHud('载入字体…');
+  await Promise.race([Promise.all([
+    document.fonts.load(`500 30px "Noto Sans SC"`,allTxt),document.fonts.load(`700 60px "Noto Sans SC"`,allTxt),document.fonts.load(`900 300px "Noto Sans SC"`,allTxt),
+    document.fonts.load(`500 12px Inter`,'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789·/—×'),document.fonts.load(`600 12px Inter`,'ABCDEFGHIJKLMNOPQRSTUVWXYZ'),
+    document.fonts.load(`600 300px "Inter Tight"`,'0123456789 Flykm%'),document.fonts.load(`500 30px "Inter Tight"`,'Windows / Android'),document.fonts.load(`40px "ZCOOL KuaiLe"`,'我月亮妈妈祖父地球月球小行星带滑翔机'),
+  ]).catch(()=>{}),wait(9000)]);
+  setHud('绘制纸张与蜡笔…');await nf();
+  toothC=makeTooth();cpat=cctx.createPattern(toothC,'repeat');
+  {const x=grainC.getContext('2d'),id=x.createImageData(W,H),d=id.data,r=mulberry32(3);
+    for(let i=0;i<d.length;i+=4){const n=r(),v=255-n*n*26;d[i]=v;d[i+1]=v-2;d[i+2]=v-6;d[i+3]=255}x.putImageData(id,0,0);
+    x.globalAlpha=.05;x.strokeStyle='#7d6c52';x.lineWidth=.6;for(let k=0;k<1100;k++){const sx=r()*W,sy=r()*H,a=r()*6.28,l=8+r()*30;x.beginPath();x.moveTo(sx,sy);x.quadraticCurveTo(sx+Math.cos(a)*l*.5+(r()-.5)*6,sy+Math.sin(a)*l*.5+(r()-.5)*6,sx+Math.cos(a)*l,sy+Math.sin(a)*l);x.stroke()}}
+  seed(41);F(dotItems,DOTP,.35,13,SUN,14);S(dotItems,densify(DOTP,8,true),SUN_D,12);
+  setHud('绘制游戏画面碎片… 约需 10–20 秒');await nf();
+  await buildBGs();for(let v=0;v<3;v++)starLayer(v);
+  ready=true;
+  const q=new URLSearchParams(location.search),qt=parseFloat(q.get('t'));
+  render(t=isFinite(qt)?clamp(qt,0,DUR):0);if(isFinite(qt)||q.get('hud')==='0')started=true;
+  updHud();
+  try{AU.buf=await buildAudio()}catch(e){console.warn('audio',e)}
+  syncAudio();updHud();
+  return true})();
+window.pv={duration:DUR,seek,play,pause,get t(){return t},get playing(){return playing},ready:pvReady,render:x=>render(x),audioWav:()=>AU.buf&&wavOf(AU.buf),saveWav};
+render(0);
+</script>
+</body></html>

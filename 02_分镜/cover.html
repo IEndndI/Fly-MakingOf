@@ -1,0 +1,1212 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>飞 Fly · B站封面</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=ZCOOL+KuaiLe&display=block">
+<style>
+html,body{margin:0;background:#1b1d24;color:#cfcac0;font:13px/1.6 Inter,"Noto Sans SC",sans-serif}
+main{display:flex;flex-direction:column;align-items:center;gap:28px;padding:28px 16px 48px}
+figure{margin:0;display:flex;flex-direction:column;gap:8px;max-width:100%}
+canvas{max-width:min(100%,1200px);height:auto;display:block;background:#F2ECDF}
+figcaption{display:flex;justify-content:space-between;gap:16px;letter-spacing:.04em}
+button{font:inherit;color:#1b1d24;background:#F2B51F;border:0;padding:4px 12px;cursor:pointer}
+#st{opacity:.7}
+</style></head><body>
+<main>
+  <div id="st">载入中…（字体与地球需要十几秒）</div>
+  <figure><canvas id="c169" width="1920" height="1080"></canvas><figcaption><span>16:9 · 1920 × 1080</span><button data-c="c169" data-n="fly_cover_16x9">下载 PNG</button></figcaption></figure>
+  <figure><canvas id="c43" width="1600" height="1200"></canvas><figcaption><span>4:3 · 1600 × 1200</span><button data-c="c43" data-n="fly_cover_4x3">下载 PNG</button></figcaption></figure>
+</main>
+<script>
+/* 《飞 Fly》B 站封面：16:9 与 4:3。画法与 PV 相同（同一套蜡笔 / 纸纹 / 地球，由 build 脚本拼入 LIB）。
+   B 站会在封面底边叠播放量（左下）和时长（右下），所以底部约 12% 不放关键信息。 */
+'use strict';
+const TAGLINE='你还记得飞起来是什么感觉吗。';
+const G={idx:0};let toothC=null,cpat=null;
+const ccan=document.createElement('canvas');ccan.width=1920;ccan.height=1080;const cctx=ccan.getContext('2d');
+const mcan=document.createElement('canvas');mcan.width=960;mcan.height=540;const mctx=mcan.getContext('2d');
+/* ======================= LIB ======================= */
+/* — index_v8.html L606–610 — */
+const W=1920,H=1080;
+const COL=i=>120+(i-1)*142, COLR=i=>COL(i)+118;
+const COBALT='#0047AB',PAPER='#F2ECDF',SUN='#F2B51F',SUN_D='#C88A0B';
+const HAND='"ZCOOL KuaiLe","Noto Sans SC",sans-serif';
+const $=s=>document.querySelector(s);
+/* — index_v8.html L612–627 — */
+const clamp=(x,a=0,b=1)=>x<a?a:x>b?b:x;
+const seg=(t,a,b)=>clamp((t-a)/(b-a));
+const lerp=(a,b,u)=>a+(b-a)*u;
+const eOut=x=>1-Math.pow(1-x,3), eIn=x=>x*x*x, eIO=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2, eSine=x=>-(Math.cos(Math.PI*x)-1)/2;
+/* yield to the event loop without timer clamping (background tabs throttle setTimeout chains hard) */
+const mch=new MessageChannel(),mq=[];mch.port1.onmessage=()=>{const r=mq.shift();if(r)r()};
+const nf=()=>new Promise(r=>{mq.push(r);mch.port2.postMessage(0)});
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ---------- seeded randomness ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+let R=mulberry32(1);
+const seed=s=>{R=mulberry32(s)};
+const rnd=(a=0,b=1)=>a+(b-a)*R();
+function gauss(r=R){let u=0,v=0;while(!u)u=r();while(!v)v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(6.283185*v)}
+function hh(a){a|=0;a=Math.imul(a^a>>>16,0x45d9f3b);a=Math.imul(a^a>>>16,0x45d9f3b);return((a^a>>>16)>>>0)/4294967296}
+/* — index_v8.html L629–1508 — */
+/* ---------- watercolour ---------- */
+function deform(p,iters,amt){
+  for(let k=0;k<iters;k++){
+    const q=[];
+    for(let i=0;i<p.length;i++){
+      const a=p[i],b=p[(i+1)%p.length];
+      q.push(a);
+      const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1,v=(a.v+b.v)/2;
+      const m=gauss()*len*amt*v, ang=Math.atan2(dy,dx)+Math.PI/2+gauss()*.35;
+      q.push({x:(a.x+b.x)/2+Math.cos(ang)*m,y:(a.y+b.y)/2+Math.sin(ang)*m,v:v*rnd(.75,1.15)});
+    }
+    p=q;
+  }
+  return p;
+}
+function fillPoly(ctx,p){ctx.beginPath();ctx.moveTo(p[0].x,p[0].y);for(let i=1;i<p.length;i++)ctx.lineTo(p[i].x,p[i].y);ctx.closePath();ctx.fill()}
+function wash(ctx,base,color,o={}){
+  const {layers=30,alpha=.04,bi=2,li=3,amt=.45}=o;
+  const b=deform(base,bi,amt);
+  ctx.fillStyle=color;
+  for(let l=0;l<layers;l++){ctx.globalAlpha=alpha*rnd(.7,1.3);fillPoly(ctx,deform(b,li,amt))}
+  ctx.globalAlpha=1;
+}
+function ellipsePoly(cx,cy,rx,ry,n=14,v=1){const p=[];for(let i=0;i<n;i++){const a=i/n*6.2832;p.push({x:cx+Math.cos(a)*rx*rnd(.88,1.08),y:cy+Math.sin(a)*ry*rnd(.88,1.08),v:v*rnd(.6,1.3)})}return p}
+function bandPoly(y0,y1,n=10,v=1){const p=[],x0=-320,x1=2240;for(let i=0;i<=n;i++)p.push({x:x0+(x1-x0)*i/n,y:y0,v:v*rnd(.5,1.4)});for(let i=n;i>=0;i--)p.push({x:x0+(x1-x0)*i/n,y:y1,v:v*rnd(.5,1.4)});return p}
+function granulate(x,w,h){
+  const id=x.getImageData(0,0,w,h),d=id.data,r=mulberry32(99);
+  for(let i=0;i<d.length;i+=4){
+    const pig=clamp(1-(d[i]+d[i+1]+d[i+2])/701);
+    const n=r(), f=1-n*n*.24*Math.min(1,pig*4);
+    d[i]*=f;d[i+1]*=f;d[i+2]*=f;
+  }
+  x.putImageData(id,0,0);
+}
+async function paintSky(onp){
+  const c=document.createElement('canvas');c.width=960;c.height=1080;
+  const x=c.getContext('2d');
+  x.fillStyle=PAPER;x.fillRect(0,0,960,1080);
+  x.scale(.5,.5);x.globalCompositeOperation='multiply';
+  seed(11);
+  const steps=[
+    ()=>wash(x,bandPoly(-320,760,10,.7),'#C4DAF4',{layers:22,alpha:.032}),
+    ()=>wash(x,bandPoly(-320,300,10,.7),'#B9D2F2',{layers:16,alpha:.026}),
+    ()=>wash(x,bandPoly(700,1280,10,.6),'#F3E9EC',{layers:18,alpha:.024}),
+    ()=>wash(x,bandPoly(1060,1740,10,.7),'#FCE7D6',{layers:22,alpha:.03}),
+    ()=>wash(x,bandPoly(1460,1900,10,.6),'#F9D8C6',{layers:20,alpha:.024}),
+    ()=>wash(x,ellipsePoly(1480,1840,330,240,16),'#FAE0BE',{layers:22,alpha:.022}),
+    ()=>wash(x,ellipsePoly(1480,1846,124,118,14,.5),'#F4BC86',{layers:34,alpha:.045,amt:.3}),
+    ()=>wash(x,bandPoly(1884,2420,14,.3),'#D2D9C3',{layers:28,alpha:.04,amt:.25}),
+    ()=>wash(x,bandPoly(1975,2420,14,.4),'#BFCAB8',{layers:22,alpha:.03,amt:.3}),
+  ];
+  for(let i=0;i<steps.length;i++){steps[i]();onp((i+1)/(steps.length+1));await nf()}
+  /* a band of real night above the title sky: the edge of the earth-moon system */
+  wash(x,bandPoly(-320,150,10,.6),'#8FA5CF',{layers:14,alpha:.03});
+  x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';
+  granulate(x,960,1080);onp(1);
+  return c;
+}
+const PAD=110;
+function paintCloud(w,h,s){
+  seed(s);
+  const c=document.createElement('canvas');c.width=Math.ceil((w+PAD*2)/2);c.height=Math.ceil((h+PAD*2)/2);
+  const x=c.getContext('2d');x.scale(.5,.5);x.translate(PAD,PAD);
+  const n=4+(R()*3|0);
+  for(let i=0;i<n;i++){
+    const u=i/(n-1),cx=w*(.2+.6*u)+rnd(-20,20),cy=h*(.6-Math.sin(u*Math.PI)*.18)+rnd(-10,10);
+    wash(x,ellipsePoly(cx,cy,w*rnd(.13,.2),h*rnd(.24,.34),12,.8),'#FBF8F0',{layers:20,alpha:.075,amt:.35});
+  }
+  x.globalCompositeOperation='multiply';
+  wash(x,ellipsePoly(w*.5,h*.78,w*.36,h*.12,12,.6),'#CFC4DA',{layers:18,alpha:.05,amt:.3});
+  return c;
+}
+
+/* ---------- crayon ---------- */
+function makeTooth(){
+  const S=256,c=document.createElement('canvas');c.width=c.height=S;
+  const x=c.getContext('2d'),id=x.createImageData(S,S),d=id.data,r=mulberry32(5);
+  const grid=P=>{const g=new Float32Array(P*P);for(let i=0;i<g.length;i++)g[i]=r();return g};
+  const vn=(g,P,X,Y)=>{const fx=X/S*P,fy=Y/S*P,ix=Math.floor(fx),iy=Math.floor(fy),tx=fx-ix,ty=fy-iy,sx=tx*tx*(3-2*tx),sy=ty*ty*(3-2*ty);
+    const i0=ix%P,i1=(ix+1)%P,j0=iy%P,j1=(iy+1)%P,a=g[j0*P+i0],b=g[j0*P+i1],c2=g[j1*P+i0],e=g[j1*P+i1];
+    return a+(b-a)*sx+(c2-a)*sy+(a-b-c2+e)*sx*sy};
+  const g1=grid(128),g2=grid(64),g3=grid(16);
+  for(let Y=0;Y<S;Y++)for(let X=0;X<S;X++){
+    const v=.5*vn(g1,128,X,Y)+.32*vn(g2,64,X,Y)+.18*vn(g3,16,X,Y);
+    d[(Y*S+X)*4+3]=clamp((v-.28)/.3)*255;
+  }
+  x.putImageData(id,0,0);return c;
+}
+function applyTooth(ctx,pat,ox,oy){
+  ctx.save();ctx.globalCompositeOperation='destination-in';ctx.globalAlpha=1;
+  pat.setTransform(new DOMMatrix([1,0,0,1,ox,oy]));ctx.fillStyle=pat;ctx.fillRect(0,0,W,H);ctx.restore();
+}
+function crayon(ctx,pts,color,w,r,ox,oy,n=pts.length,salt=0,am=1){
+  if(n<2)return;
+  ctx.strokeStyle=color;ctx.lineCap='round';ctx.lineJoin='round';
+  const ph=r()*6.283,amp=.6+r()*.5;
+  for(let p=0;p<3;p++){
+    ctx.globalAlpha=(.42+.38*r())*am;
+    ctx.lineWidth=w*(.55+.5*r());
+    const jx=gauss(r)*w*.16,jy=gauss(r)*w*.16,k=(salt+p*7919)|0;
+    ctx.beginPath();
+    for(let i=0;i<n;i++){
+      const q=pts[i];
+      const x=q.x+ox+jx+Math.sin(i*.19+ph)*amp+(hh(i*3+k)-.5)*.9;
+      const y=q.y+oy+jy+Math.cos(i*.23+ph)*amp+(hh(i*3+1+k)-.5)*.9;
+      if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+function crayonText(ctx,it,r,ox,oy){
+  ctx.fillStyle=it.color;ctx.font=`${it.size}px ${HAND}`;ctx.textBaseline='alphabetic';
+  for(const ch of it.chars){
+    ctx.save();ctx.translate(ch.x+ox,ch.y+oy);ctx.rotate(ch.rot+gauss(r)*.012);ctx.scale(ch.s,ch.s);
+    for(let p=0;p<3;p++){ctx.globalAlpha=.45+.35*r();ctx.fillText(ch.c,gauss(r)*1.2,gauss(r)*1.2)}
+    ctx.restore();
+  }
+  ctx.globalAlpha=1;
+}
+function pathPoly(ctx,p,ox,oy){ctx.beginPath();p.forEach((q,i)=>i?ctx.lineTo(q.x+ox,q.y+oy):ctx.moveTo(q.x+ox,q.y+oy));ctx.closePath()}
+
+/* kid geometry */
+function kline(x1,y1,x2,y2,wob=2.5){
+  const len=Math.hypot(x2-x1,y2-y1)||1,n=Math.max(3,Math.round(len/8)),nx=-(y2-y1)/len,ny=(x2-x1)/len;
+  const bow=gauss()*wob*1.2,ph=rnd(0,6.28),fr=rnd(.8,2.2),os=rnd(1,7),oe=rnd(2,9),pts=[];
+  for(let i=0;i<=n;i++){const u=i/n,s=(-os+u*(len+os+oe))/len,off=Math.sin(u*Math.PI)*bow+Math.sin(ph+u*fr*6.283)*wob*.35;
+    pts.push({x:x1+(x2-x1)*s+nx*off,y:y1+(y2-y1)*s+ny*off})}
+  return pts;
+}
+function kcircle(cx,cy,r,turns=1.2){const n=Math.round(r*turns*.7)+16,a0=rnd(0,6.28),pts=[];
+  for(let i=0;i<=n;i++){const u=i/n,a=a0+u*turns*6.283,rr=r*(1+.06*Math.sin(u*9+a0))+(u-.5)*r*.1;pts.push({x:cx+Math.cos(a)*rr,y:cy+Math.sin(a)*rr*.95})}return pts}
+function zig(poly,angle,sp,over=6){
+  const ca=Math.cos(angle),sa=Math.sin(angle),rot=poly.map(p=>({u:p.x*ca+p.y*sa,v:-p.x*sa+p.y*ca}));
+  let u0=1e9,u1=-1e9,v0=1e9,v1=-1e9;rot.forEach(q=>{u0=Math.min(u0,q.u);u1=Math.max(u1,q.u);v0=Math.min(v0,q.v);v1=Math.max(v1,q.v)});
+  const pts=[];let dir=1;
+  for(let v=v0-sp*.5;v<=v1+sp*.5;v+=sp*rnd(.8,1.2)){
+    const a=dir>0?u0-over:u1+over,b=dir>0?u1+over:u0-over;
+    pts.push({u:a+gauss()*3,v:v+gauss()*1.2});pts.push({u:b+gauss()*3,v:v+sp*.5+gauss()*1.2});dir*=-1;
+  }
+  return densify(pts.map(q=>({x:q.u*ca-q.v*sa,y:q.u*sa+q.v*ca})),7);
+}
+function densify(pts,step=6,closed=false){const P=closed?[...pts,pts[0]]:pts,out=[];
+  for(let i=0;i<P.length-1;i++){const a=P[i],b=P[i+1],n=Math.max(1,Math.round(Math.hypot(b.x-a.x,b.y-a.y)/step));for(let j=0;j<n;j++)out.push({x:a.x+(b.x-a.x)*j/n,y:a.y+(b.y-a.y)*j/n})}
+  out.push(P[P.length-1]);return out}
+function kstar(cx,cy,r){const v=[];for(let i=0;i<=5;i++){const a=-Math.PI/2+i*4*Math.PI/5+rnd(-.05,.05);v.push({x:cx+Math.cos(a)*r*rnd(.9,1.1),y:cy+Math.sin(a)*r*rnd(.9,1.1)})}return densify(v,4)}
+function bird(x,y,s){const pts=[];for(let i=0;i<=22;i++){const u=i/22;pts.push({x:x-s+u*2*s,y:y-Math.abs(Math.sin(u*Math.PI*2))*s*.42})}return pts}
+function catmull(P,sg=20){const out=[];for(let i=0;i<P.length-1;i++){const p0=P[Math.max(0,i-1)],p1=P[i],p2=P[i+1],p3=P[Math.min(P.length-1,i+2)];
+  for(let j=0;j<sg;j++){const t=j/sg,t2=t*t,t3=t2*t;out.push({x:.5*(2*p1.x+(-p0.x+p2.x)*t+(2*p0.x-5*p1.x+4*p2.x-p3.x)*t2+(-p0.x+3*p1.x-3*p2.x+p3.x)*t3),y:.5*(2*p1.y+(-p0.y+p2.y)*t+(2*p0.y-5*p1.y+4*p2.y-p3.y)*t2+(-p0.y+3*p1.y-3*p2.y+p3.y)*t3)})}}
+  out.push(P[P.length-1]);return out}
+function resample(P,step){const out=[{...P[0]}];let prev=P[0],need=step;
+  for(let i=1;i<P.length;i++){let a=prev,b=P[i],d=Math.hypot(b.x-a.x,b.y-a.y);
+    while(d>=need){const u=need/d,q={x:a.x+(b.x-a.x)*u,y:a.y+(b.y-a.y)*u};out.push(q);a=q;d=Math.hypot(b.x-a.x,b.y-a.y);need=step}
+    need-=d;prev=b}
+  return out}
+
+let IID=1;
+const bbOf=pts=>{let a=1e9,b=1e9,c=-1e9,d=-1e9;for(const p of pts){if(p.x<a)a=p.x;if(p.y<b)b=p.y;if(p.x>c)c=p.x;if(p.y>d)d=p.y}return{x0:a,y0:b,x1:c,y1:d}};
+const S=(list,pts,color,w,extra)=>list.push(Object.assign({id:IID++,k:'s',pts,color,w,bb:bbOf(pts)},extra));
+const F=(list,clip,ang,sp,color,w)=>list.push({id:IID++,k:'f',clip,pts:zig(clip,ang,sp),color,w,bb:bbOf(clip)});
+function handText(list,str,x0,y0,size,color){const chars=[];let x=x0;for(const c of str){const s=rnd(.9,1.12);chars.push({c,x,y:y0+gauss()*4,rot:gauss()*.08,s});x+=size*s*rnd(.9,1)}
+  list.push({id:IID++,k:'t',chars,size,color,bb:{x0:x0-30,y0:y0-size*1.3,x1:x+30,y1:y0+size*.4}})}
+
+function buildDreamItems(){
+  const L=[];seed(31);
+  /* yellow belongs to him alone: the window glows apricot, the sun is a child's red-orange, stars are white crayon */
+  const blue='#36539A',red='#B4553E',yel='#F2A766',amber='#DE6440',grn='#5F8050',brn='#7B5B3F',gray='#4E4D58',ink='#38435F',star='#FFFBF0';
+  /* horizon + grass */
+  S(L,kline(-30,1892,980,1886,3),grn,6);S(L,kline(940,1888,1960,1894,3),grn,6);
+  for(let x=-10;x<1940;x+=rnd(28,64)){const h=rnd(10,24);S(L,[{x,y:1893},{x:x+4,y:1893-h},{x:x+9,y:1893},{x:x+13,y:1893-h*.8},{x:x+18,y:1893}].map(p=>({x:p.x+gauss(),y:p.y+gauss()})),grn,4)}
+  /* house */
+  const roof=[{x:228,y:1706},{x:405,y:1584},{x:582,y:1706}];
+  F(L,roof,-.5,9,red,5);
+  S(L,kline(228,1706,405,1584),red,7);S(L,kline(405,1584,582,1706),red,7);S(L,kline(222,1708,588,1704),red,6);
+  S(L,kline(478,1634,478,1598),red,6);S(L,kline(478,1598,512,1598),red,6);S(L,kline(512,1598,512,1658),red,6);
+  S(L,kline(252,1708,250,1892),blue,6);S(L,kline(558,1708,560,1892),blue,6);
+  const win=[{x:296,y:1736},{x:386,y:1736},{x:386,y:1806},{x:296,y:1806}];
+  F(L,win,.7,7,yel,6);F(L,win,-.9,15,amber,4);
+  S(L,kline(296,1736,386,1736,1.5),blue,5);S(L,kline(386,1736,386,1806,1.5),blue,5);S(L,kline(386,1806,296,1806,1.5),blue,5);S(L,kline(296,1806,296,1736,1.5),blue,5);
+  S(L,kline(341,1738,341,1804,1),blue,4);S(L,kline(298,1771,384,1771,1),blue,4);
+  S(L,kline(450,1892,450,1792),blue,5);S(L,kline(450,1792,520,1792),blue,5);S(L,kline(520,1792,520,1892),blue,5);
+  /* tree */
+  S(L,kline(690,1892,694,1770),brn,6);S(L,kline(714,1892,710,1770),brn,6);
+  F(L,ellipsePoly(702,1716,66,60,12,0),.4,10,grn,6);S(L,kcircle(702,1716,70,1.6),grn,6);
+  /* setting sun */
+  const arc=[];for(let i=0;i<=44;i++){const a=Math.PI+i/44*Math.PI*1.04-.02;arc.push({x:1480+Math.cos(a)*122,y:1888+Math.sin(a)*118})}
+  S(L,arc,amber,7);
+  for(let k=0;k<9;k++){const a=Math.PI*(1.08+k*.105);S(L,kline(1480+Math.cos(a)*150,1888+Math.sin(a)*146,1480+Math.cos(a)*205,1888+Math.sin(a)*200,1.5),amber,5)}
+  /* birds over the sunset */
+  S(L,bird(1060,1520,22),gray,4);S(L,bird(1118,1494,15),gray,4);S(L,bird(1012,1470,11),gray,3);
+  /* handwriting on the drawing */
+  handText(L,'我梦见我会飞。',170,1474,74,ink);
+  /* upper sky: stars + a drifting pair of birds */
+  [[628,190,13],[612,600,9],[1080,420,15],[1250,700,9],[960,840,8]].forEach(([x,y,r])=>S(L,kstar(x,y,r),star,4));
+  S(L,bird(-200,520,18),gray,4,{vx:14});S(L,bird(-150,498,12),gray,3,{vx:14});
+  /* more of his drawing (its own seed, so the strokes above keep their shape) */
+  seed(32);
+  /* 「比学校的旗杆还高」: the school flagpole, and himself above it, arms out */
+  S(L,kline(900,1892,902,1556,1.5),gray,5);S(L,kcircle(902,1548,7,1.2),gray,4);
+  const flag=[{x:904,y:1562,v:.1},{x:986,y:1584,v:.1},{x:904,y:1608,v:.1}];F(L,flag,.4,7,red,5);S(L,densify(flag,5,true),red,5);
+  const me=SUN_D,fx=868,fy=1150,m0=L.length; // himself: not there at first — the trail wipes him in as it loops round him (ME, drawDream)
+  S(L,kcircle(fx,fy,20,1.25),me,5);S(L,[{x:fx-15,y:fy-12},{x:fx-12,y:fy-36},{x:fx-3,y:fy-18}],me,4);S(L,[{x:fx+15,y:fy-12},{x:fx+12,y:fy-36},{x:fx+3,y:fy-18}],me,4);
+  S(L,kline(fx+2,fy+20,fx+8,fy+82,1),me,5);S(L,kline(fx-58,fy+28,fx+70,fy+40,1.5),me,5);
+  S(L,kline(fx+8,fy+82,fx-14,fy+122,1),me,5);S(L,kline(fx+8,fy+82,fx+34,fy+118,1),me,5);
+  S(L,kline(fx+30,fy+2,fx+44,fy+-6,.5),me,3);S(L,kline(fx+44,fy-6,fx+60,fy-2,.5),me,3); // a tail, because he has one
+  for(let i=m0;i<L.length;i++)L[i].me=true;
+  /* up where the sky goes dark: a moon ring round where the paper moon will sit, coloured rocks, more stars */
+  S(L,kcircle(1150,560,104,1.15),'#FBF3D6',5);
+  [[1112,520,12],[1180,590,9],[1130,610,7]].forEach(([x,y,r])=>S(L,kcircle(x,y,r,1.1),'#E9DFC4',3));
+  [['#7FD1C7',1180,236,14],['#E79AC1',1330,310,10],['#9C8FE0',890,610,12],['#F08C6B',1060,780,9],['#7FD1C7',1320,690,11],['#E79AC1',780,800,8],['#9C8FE0',1390,200,9]]
+    .forEach(([c,x,y,r])=>{const p=ellipsePoly(x,y,r,r*.8,9,.5);F(L,p,.6,5,c,5);S(L,densify(p,4,true),'#F5F2EA',3)});
+  [[1240,180,12],[1390,420,9],[1000,520,8],[1290,620,10],[1000,950,9],[1160,162,7]].forEach(([x,y,r])=>S(L,kstar(x,y,r),star,4));
+  for(let i=0;i<40;i++){const x=rnd(720,1420),y=rnd(80,1000);S(L,[{x,y},{x:x+1.5,y:y+1}],star,3)}
+  handText(L,'月亮',1010,744,40,ink);L[L.length-1].late=true; // written in only once the title has set (MOON_WORD)
+  return L;
+}
+function buildTrail(){
+  seed(55);
+  const P=[[470,1612],[560,1500],[700,1392],[830,1322],[905,1226],[862,1142],[768,1160],[748,1262],[836,1312],[985,1250],[960,1070],[860,870],[770,650],[720,420],[722,190],[752,-80]].map(([x,y])=>({x,y}));
+  return resample(catmull(P,24),5).map((p,i)=>({x:p.x+Math.sin(i*.07)*2,y:p.y+Math.cos(i*.05)*2}));
+}
+/* ---------- game backgrounds: same paper, same crayons ---------- */
+const rectP=(x0,y0,x1,y1,v=.15)=>[{x:x0,y:y0,v},{x:x1,y:y0,v},{x:x1,y:y1,v},{x:x0,y:y1,v}];
+const polyP=(a,v=.15)=>a.map(([x,y])=>({x,y,v}));
+const arcP=(cx,cy,rx,ry,a0,a1,n=24)=>Array.from({length:n+1},(_,i)=>{const a=a0+(a1-a0)*i/n;return{x:cx+Math.cos(a)*rx,y:cy+Math.sin(a)*ry}});
+function box(L,x0,y0,x1,y1,c,w=5){S(L,kline(x0,y0,x1,y0,1.5),c,w);S(L,kline(x1,y0,x1,y1,1.5),c,w);S(L,kline(x1,y1,x0,y1,1.5),c,w);S(L,kline(x0,y1,x0,y0,1.5),c,w)}
+async function paintBase(washes,ph=540){
+  const c=document.createElement('canvas');c.width=960;c.height=ph;const x=c.getContext('2d');
+  x.fillStyle=PAPER;x.fillRect(0,0,960,ph);x.scale(.5,.5);x.globalCompositeOperation='multiply';
+  for(const [poly,col,o] of washes){wash(x,poly,col,o);await nf()}
+  x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='source-over';granulate(x,960,ph);return c;
+}
+/* the glider, as a child draws it: pale yellow wing, his yellow body, black struts, a propeller that boils into a spin, and his head in the cockpit */
+function buildGlider(){
+  seed(808);const L=[],ink='#2F3036';
+  const wing=polyP([[-232,-16],[232,-24],[234,-8],[-230,0]],.05);F(L,wing,.1,11,'#F7D66E',6);S(L,densify(wing,6,true),ink,4);
+  const body=polyP([[-92,6],[40,-12],[98,4],[44,22],[-82,18]],.05);F(L,body,.25,8,SUN,7);S(L,densify(body,6,true),ink,5);
+  S(L,kline(-86,8,-116,-36,1),ink,5);S(L,kline(-116,-36,-76,-30,1),ink,4);
+  S(L,kline(-60,-6,-30,12,1),ink,4);S(L,kline(70,-14,40,10,1),ink,4);
+  S(L,kcircle(14,-24,15,1.3),SUN,5);
+  {const cap=[];for(let q=0;q<=10;q++){const a=Math.PI*1.05+q/10*Math.PI*.95;cap.push({x:14+Math.cos(a)*17,y:-24+Math.sin(a)*16,v:.05})}F(L,cap,.9,4,CAP,5);S(L,densify(cap,4,true),CAP_D,3); // his cap, side on
+    S(L,kcircle(28,-29,5,1.2),'#3A3A44',3);S(L,densify([{x:4,y:-18},{x:-10,y:-12},{x:-24,y:-16}],4),CAP_D,4)} // goggles; the strap blown back
+  S(L,kline(4,-36,0,-52,1),SUN,4);S(L,kline(22,-36,28,-52,1),SUN,4);
+  S(L,kline(104,-16,104,24,1),ink,4);S(L,kline(90,4,118,4,1),ink,4);
+  return L;
+}
+/* chapter 2's sky, four screens tall: the July slope → summer blue → cloud → deeper than any blue → violet → the black, the stars and the moon */
+async function buildAscent(){
+  seed(309);const L=[],gray='#4E4D58',ink='#2F3036',grn='#5F8050',blue='#36539A',red='#B4553E';
+  const base=await paintBase([
+    [bandPoly(2350,3900,10,.6),'#C9DDF3',{layers:22,alpha:.04}],   // runs on under the slope, so no paper gap shows at the horizon
+    [bandPoly(1640,2520,10,.6),'#8FB4E6',{layers:24,alpha:.05}],
+    [bandPoly(1000,1820,10,.5),'#3F69C8',{layers:28,alpha:.07}],
+    [bandPoly(560,1260,10,.5),'#5A4C9C',{layers:26,alpha:.07}],
+    [bandPoly(-320,780,10,.4),'#1B2140',{layers:30,alpha:.1}],
+    [bandPoly(-320,420,10,.4),'#0F1224',{layers:20,alpha:.1}],
+    [ellipsePoly(980,2960,520,150,16,.4),'#A8C98E',{layers:20,alpha:.05,amt:.25}],
+    [polyP([[-320,4400],[-320,4040],[1940,3820],[2240,3820],[2240,4400]],.25),'#B3CF94',{layers:24,alpha:.05,amt:.25}],
+    [polyP([[-320,4400],[-320,4140],[1940,3930],[2240,3930],[2240,4400]],.25),'#97B87C',{layers:16,alpha:.04,amt:.25}],
+  ],2160);
+  const x=base.getContext('2d');x.save();x.scale(.5,.5);
+  wash(x,ellipsePoly(1440,300,118,116,18,.15),'#F2EFE6',{layers:14,alpha:.3,amt:.06});         // the white, wet moon
+  x.globalCompositeOperation='multiply';wash(x,ellipsePoly(1462,290,104,106,16,.2),'#C9D0E0',{layers:8,alpha:.06,amt:.08});
+  x.globalCompositeOperation='source-over';
+  [['#7FD1C7',260,520],['#E79AC1',620,640],['#9C8FE0',980,470],['#F08C6B',1260,700],['#7FD1C7',1620,560],['#E79AC1',1820,760],['#9C8FE0',420,820],['#F08C6B',1540,880]]
+    .forEach(([c,ax,ay])=>wash(x,ellipsePoly(ax,ay,rnd(12,26),rnd(10,20),10,.5),c,{layers:10,alpha:.18,amt:.3}));  // asteroids hung with colour
+  x.restore();
+  for(let i=0;i<170;i++){const sx=rnd(0,1920),sy=Math.pow(R(),1.5)*1050,s=rnd(2,8);S(L,[{x:sx-s,y:sy},{x:sx+s,y:sy}],'#FFFDF4',s>5?4:3);if(s>5)S(L,[{x:sx,y:sy-s},{x:sx,y:sy+s}],'#FFFDF4',3)}
+  for(let i=0;i<240;i++){const u=R(),sx=-100+u*2100+gauss()*50,sy=820-u*940+gauss()*55;S(L,[{x:sx,y:sy},{x:sx+1.5,y:sy+1}],'#FFFDF4',2)} // a river of stars
+  for(let i=0;i<9;i++)S(L,bird(rnd(80,1840),rnd(2700,3250),rnd(10,20)),gray,3);
+  S(L,resample(catmull([[560,2900],[740,2990],[920,2930],[1100,3020],[1300,2950],[1440,3000]].map(([a,b])=>({x:a,y:b})),10),6),'#5C86C8',3); // the river, a blue thread on green felt
+  S(L,kline(-20,4042,1940,3822,3),grn,6);
+  for(let gx=0;gx<1930;gx+=rnd(30,64)){const gy=4040-(gx+320)*220/2260-2;S(L,[{x:gx,y:gy},{x:gx+4,y:gy-14},{x:gx+9,y:gy},{x:gx+13,y:gy-11},{x:gx+18,y:gy}],grn,4)}
+  box(L,120,3800,400,3960,blue,5);S(L,kline(104,3804,260,3700),red,6);S(L,kline(260,3700,416,3804),red,6);F(L,rectP(160,3850,220,3910),.6,7,'#F2A766',5);
+  /* more of the slope (own seed): his grandfather's chimney and its smoke, the yard fence, a windsock blowing the way he'll go, two trees, flowers */
+  {const sv=R;seed(312);
+    box(L,326,3716,350,3760,red,4);S(L,resample(catmull([[338,3710],[326,3680],[350,3652],[334,3622],[356,3596]].map(([x,y])=>({x,y})),8),5),'#C9C3D2',4);S(L,kline(300,3960,300,3880,.5),blue,4);S(L,kcircle(300,3920,4,1.2),blue,3);
+    for(let x=420;x<640;x+=24){const y=slopeY(x)-2;S(L,kline(x,y,x+1,y-34,.5),'#8B6A45',4)}S(L,kline(420,slopeY(420)-24,640,slopeY(640)-24,.8),'#8B6A45',4);
+    {const bx=1060,by=slopeY(1060);S(L,kline(bx,by,bx-2,by-150,.8),'#5A5A62',5);for(let k=0;k<4;k++){const x0=bx+k*26,x1=x0+26,h0=20-k*3,h1=17-k*3,p=polyP([[x0,by-150+(20-h0)*.4],[x1,by-150+(20-h1)*.4+4],[x1,by-150+(20-h1)*.4+4+h1*1.6],[x0,by-150+(20-h0)*.4+h0*1.6]],.02);F(L,p,1.3,5,k%2?'#F7F3EA':'#B4553E',6);S(L,densify(p,4,true),ink,2)}}
+    for(const [tx,r] of [[1520,58],[1760,46]]){const ty=slopeY(tx);S(L,kline(tx,ty,tx+2,ty-r*1.3,1.5),'#7B5B3F',6);F(L,ellipsePoly(tx,ty-r*2,r,r*.9,10,0),.4,8,grn,6);S(L,kcircle(tx,ty-r*2,r+3,1.2),grn,5)}
+    for(let i=0;i<46;i++){const x=rnd(420,1900),y=slopeY(x)+rnd(10,220);S(L,kcircle(x,y,rnd(3,5.5),1.1),['#E79AC1','#F6E27A','#FBF8F0','#C9B8F0'][i%4],3)}
+    R=sv}
+  const clouds=[];
+  [[300,1820,640,230,4],[1500,1760,720,250,6],[900,1990,820,280,5],[200,2160,700,240,7],[1650,2120,760,260,4],[700,2330,900,300,6,1],[1400,2410,860,280,5,1],[300,2470,640,220,4,1],[1100,2250,700,240,7,1],[1800,2300,620,220,5,1],[600,2620,520,180,6],[1500,2700,600,200,4]]
+    .forEach(([cx,cy,w,h,v,front],i)=>{const c=paintCloud(w,h,500+i);clouds.push({x:cx,y:cy,v,can:c,cw:c.width*2,ch:c.height*2,front:!!front})});
+  BGS.ascent={world:true,base,items:L,clouds};GLIDER=buildGlider();
+}
+let GLIDER=[];
+const CAP='#7A5236',CAP_D='#4E3524'; // his flying cap (飞行帽): brown leather, darker seams
+
+/* ---------- chapter 2, re-shot over his shoulder: the run, the lift, the field falling away, the cloud, the dark — and, when he looks back, the earth as he drew it ---------- */
+const FL={};
+const EARTH={x:1080,y:450,r:360},MOON0={x:300,y:250},MOON1={x:860,y:-70},MOON2={x:1460,y:200},GL_R={x:1650,y:905};
+function kellipse(cx,cy,rx,ry,turns=1.08){const n=Math.round((rx+ry)*turns*.45)+16,a0=rnd(0,6.28),pts=[];
+  for(let i=0;i<=n;i++){const u=i/n,a=a0+u*turns*6.283,k=1+.03*Math.sin(u*11+a0)+(u-.5)*.04;pts.push({x:cx+Math.cos(a)*rx*k,y:cy+Math.sin(a)*ry*k})}return pts}
+/* like paintBase, at full size: for the map that gets looked at from close up */
+async function paintBaseFull(washes,w=W,h=H){const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');
+  x.fillStyle=PAPER;x.fillRect(0,0,w,h);x.globalCompositeOperation='multiply';for(const [poly,col,o] of washes){wash(x,poly,col,o);await nf()}
+  x.globalCompositeOperation='source-over';granulate(x,w,h);return c}
+/* the glider from behind: a long yellow plank of a wing, the pod, the tail — and his head over the rim, ears up */
+function buildGliderRear(){
+  seed(812);const L=[],ink='#2F3036',fur='#F3C93F',furD='#C99A1C'; // his fur is yellow (Sunny's sheet)
+  const wing=polyP([[-350,-4],[-34,-24],[34,-24],[350,-4],[350,14],[34,0],[-34,0],[-350,14]],.04);F(L,wing,.06,7,'#F7D66E',6);S(L,densify(wing,6,true),ink,4);
+  S(L,kline(-170,8,-48,60,1),ink,5);S(L,kline(170,8,48,60,1),ink,5);
+  const pod=ellipsePoly(0,72,56,40,16,.12);F(L,pod,.35,7,SUN,7);S(L,densify(pod,6,true),ink,5);
+  const fin=polyP([[-5,110],[5,110],[11,154],[-11,154]],.02);F(L,fin,0,5,SUN,4);S(L,densify(fin,4,true),ink,4);S(L,kline(-66,152,66,152,1),ink,5);
+  const h0=L.length; // his head starts here — the empty glider (after he climbs off) is the same drawing without it
+  const head=ellipsePoly(0,36,26,24,12,.08);F(L,head,.5,4,fur,6);S(L,densify(head,5,true),furD,4);
+  /* 飞行帽: a leather flying cap over his head, the goggles' band round the back, two straps blown back onto his shoulders */
+  {const cap=[];for(let q=0;q<=12;q++){const a=Math.PI+q/12*Math.PI;cap.push({x:Math.cos(a)*28,y:38+Math.sin(a)*27,v:.05})}cap.push({x:25,y:45,v:.05},{x:-25,y:45,v:.05});
+    F(L,cap,.9,4,CAP,6);S(L,densify(cap,4,true),CAP_D,3);S(L,[{x:-28,y:33},{x:0,y:37},{x:28,y:33}],'#3A3A44',4);
+    S(L,densify([{x:-23,y:45},{x:-31,y:58},{x:-42,y:66}],4),CAP_D,4);S(L,densify([{x:23,y:45},{x:31,y:58},{x:42,y:66}],4),CAP_D,4)}
+  const eL=polyP([[-23,26],[-19,-8],[-5,16]],.02),eR=polyP([[23,26],[19,-8],[5,16]],.02);
+  F(L,eL,.2,3,fur,4);S(L,densify(eL,4,true),furD,4);F(L,eR,.2,3,fur,4);S(L,densify(eR,4,true),furD,4);
+  const h1=L.length;
+  S(L,arcP(0,72,50,16,Math.PI*1.04,Math.PI*1.96,16),ink,5); // the cockpit rim, in front of him: he sits in it
+  FL.rearEmpty=[...L.slice(0,h0),...L.slice(h1)];
+  return L;
+}
+/* the same glider seen from above, nose up */
+function buildGliderTop(){
+  seed(813);const L=[],ink='#2F3036',fur='#F3C93F',furD='#C99A1C';
+  const wing=polyP([[-330,-18],[330,-18],[330,8],[-330,8]],.04);F(L,wing,.06,10,'#F7D66E',6);S(L,densify(wing,6,true),ink,4);
+  const body=polyP([[-18,-96],[18,-96],[14,130],[-14,130]],.04);F(L,body,1.5,8,SUN,7);S(L,densify(body,6,true),ink,5);
+  const tail=polyP([[-84,112],[84,112],[84,128],[-84,128]],.03);F(L,tail,.06,6,SUN,5);S(L,densify(tail,5,true),ink,4);
+  const head=ellipsePoly(0,-40,17,17,10,.08);F(L,head,.5,5,fur,5);S(L,densify(head,4,true),furD,4);
+  {const cap=ellipsePoly(0,-38,15,14,10,.05);F(L,cap,.9,4,CAP,5);S(L,densify(cap,4,true),CAP_D,3); // the cap from above: goggles on the brow, straps streaming back
+    S(L,kcircle(-6,-52,4,1.2),'#3A3A44',3);S(L,kcircle(6,-52,4,1.2),'#3A3A44',3);S(L,[{x:-11,y:-32},{x:-14,y:-20},{x:-12,y:-8}],CAP_D,3);S(L,[{x:11,y:-32},{x:14,y:-20},{x:12,y:-8}],CAP_D,3)}
+  S(L,[{x:-12,y:-50},{x:-9,y:-68},{x:-3,y:-54}],furD,4);S(L,[{x:12,y:-50},{x:9,y:-68},{x:3,y:-54}],furD,4);
+  return L;
+}
+async function buildFlight(){
+  const grn='#5F8050',ink='#2F3036',amber='#E58A55',gray='#4E4D58';
+  FL.rear=buildGliderRear();FL.top=buildGliderTop();
+  /* the run, from behind him: a worn track up the slope to the crest; the sky above the crest is cut away so the real sky can move behind it */
+  seed(320);
+  const crest=Array.from({length:25},(_,i)=>{const x=-20+i*82.5;return{x,y:574+Math.pow((x-1300)/1300,2)*46+Math.sin(i*1.3)*3}});
+  /* the sky those shots look into: one tall wash, light at the foot, deeper blue at the head, no ground in it */
+  FL.sky=await paintBase([
+    [bandPoly(-320,2480,10,.5),'#D3E4F6',{layers:18,alpha:.04}],
+    [bandPoly(-320,1500,10,.5),'#B4CFF0',{layers:20,alpha:.045}],
+    [bandPoly(-320,800,10,.5),'#8FB2E8',{layers:20,alpha:.05}],
+    [bandPoly(-320,300,10,.4),'#6E93DC',{layers:16,alpha:.05}],
+  ],1080);
+  const g=await paintBase([
+    [polyP([[-320,1240],[-320,560],[2240,560],[2240,1240]],.3),'#B5D295',{layers:28,alpha:.075,amt:.25}],
+    [bandPoly(560,780,10,.4),'#A7C888',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[1150,1240],[1460,1240],[1318,575],[1284,575]],.15),'#D2DEA6',{layers:16,alpha:.045,amt:.15}],
+    [bandPoly(700,1240,10,.3),'#A3C384',{layers:18,alpha:.04,amt:.3}],
+    [bandPoly(860,1240,10,.3),'#8DB070',{layers:16,alpha:.04,amt:.3}],
+    [bandPoly(1000,1240,10,.3),'#7C9F61',{layers:12,alpha:.04,amt:.3}],
+  ]);
+  {const x=g.getContext('2d');x.save();x.scale(.5,.5);x.globalCompositeOperation='destination-out';x.fillStyle='#000';x.beginPath();x.moveTo(-40,-40);x.lineTo(1960,-40);
+    for(let i=crest.length-1;i>=0;i--)x.lineTo(crest[i].x,crest[i].y-2);x.closePath();x.fill();x.restore()}
+  FL.ground=g;
+  let L=[];
+  S(L,densify(crest.map(p=>({x:p.x,y:p.y})),6),grn,6);
+  [[260,24],[340,18],[1720,26],[1800,18],[880,14]].forEach(([tx,r])=>{const ty=574+Math.pow((tx-1300)/1300,2)*46;S(L,kline(tx,ty,tx,ty-r*1.6,1),'#7B5B3F',4);F(L,ellipsePoly(tx,ty-r*2.2,r,r,10,0),.4,7,grn,5);S(L,kcircle(tx,ty-r*2.2,r+2,1.2),grn,4)});
+  FL.groundItems=L;
+  L=[];const sun=[];for(let i=0;i<=40;i++){const a=i/40*6.4;sun.push({x:1060+Math.cos(a)*46,y:190+Math.sin(a)*44})}S(L,sun,amber,7);
+  for(let k=0;k<10;k++){const a=k/10*6.283+.2;S(L,kline(1060+Math.cos(a)*64,190+Math.sin(a)*62,1060+Math.cos(a)*96,190+Math.sin(a)*92,1.2),amber,5)}
+  FL.skyItems=L;
+  /* looking down: his grandfather's field as a child's map — patchwork, contour lines round the hill, the river, the house, and two dots */
+  seed(330);
+  const rp=[[-320,880],[200,800],[620,930],[1100,1000],[1600,930],[2240,980]];
+  const map=await paintBaseFull([
+    [bandPoly(-320,1240,10,.3),'#D6E5B6',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[80,60],[640,30],[680,400],[120,440]],.3),'#B9D493',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[1220,40],[1840,90],[1800,430],[1180,400]],.3),'#EBDE98',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[1240,610],[1880,650],[1840,1020],[1200,980]],.3),'#A9CB86',{layers:14,alpha:.05,amt:.3}],
+    [polyP([[40,640],[480,600],[520,1020],[60,1060]],.3),'#CBE0A4',{layers:14,alpha:.05,amt:.3}],
+    [ellipsePoly(900,560,560,320,16,.4),'#A6C685',{layers:16,alpha:.05,amt:.3}],
+    [ellipsePoly(900,560,380,220,16,.4),'#93B674',{layers:14,alpha:.05,amt:.3}],
+    [ellipsePoly(900,560,220,130,14,.4),'#82A766',{layers:12,alpha:.05,amt:.3}],
+    [polyP([...rp.map(([a,b])=>[a,b-34]),...rp.slice().reverse().map(([a,b])=>[a,b+34])],.2),'#9DC3EC',{layers:16,alpha:.06,amt:.15}],
+  ]);
+  {const x=map.getContext('2d'),gr=x.createRadialGradient(960,560,560,960,560,1060);gr.addColorStop(0,'#000');gr.addColorStop(1,'rgba(0,0,0,0)');
+    x.globalCompositeOperation='destination-in';x.fillStyle=gr;x.fillRect(0,0,W,H);x.globalCompositeOperation='source-over'} // the map's edge melts into the haze
+  FL.map=map;L=[];
+  [[560,410],[410,300],[270,190],[140,82]].forEach(([rx,ry])=>S(L,kellipse(900,560,rx,ry),'#6E8F55',4));
+  [-34,34].forEach(o=>S(L,resample(catmull(rp.map(([a,b])=>({x:a,y:b+o})),12),7),'#5C86C8',4));
+  box(L,500,690,610,770,'#B4553E',5);F(L,rectP(503,693,607,767),.8,11,'#C9705A',4);S(L,kline(500,730,610,730),'#B4553E',5);
+  S(L,resample(catmull([[610,730],[900,780],[1300,700],[1940,660]].map(([a,b])=>({x:a,y:b})),12),7),'#C8B48A',5);
+  [[380,560,30],[420,622,22],[1480,520,28],[1530,592,20],[700,330,26],[1180,770,24]].forEach(([tx,ty,r])=>{F(L,ellipsePoly(tx,ty,r*.85,r*.85,10,0),.4,8,'#7DA35E',5);S(L,kcircle(tx,ty,r,1.3),grn,5)});
+  for(let k=0;k<9;k++){const u0=k/9,u1=u0+.06;S(L,[{x:lerp(760,1090,u0),y:lerp(642,500,u0)},{x:lerp(760,1090,u1),y:lerp(642,500,u1)}],SUN_D,5)} // the take-off run, dashed
+  const md=ellipsePoly(800,664,10,10,8,.2);F(L,md,.6,4,'#4D6FB8',6);S(L,densify(md,3,true),ink,3);handText(L,'妈妈',826,650,40,ink);
+  const gd=ellipsePoly(756,694,8,8,8,.2);F(L,gd,.6,4,gray,5);S(L,densify(gd,3,true),ink,3);handText(L,'祖父',690,750,30,gray);
+  FL.mapItems=L;
+  await nf();
+  /* the dark, his earth, his moon */
+  {const c=document.createElement('canvas');c.width=960;c.height=540;const x=c.getContext('2d');
+    x.fillStyle='#07081A';x.fillRect(0,0,960,540);x.scale(.5,.5);x.globalCompositeOperation='screen';seed(340);
+    for(const [poly,col,o] of [ /* the dark is never quite black: a little of the earth's blue, a violet drift, a cold teal */
+      [ellipsePoly(1080,460,700,520,16,.5),'#172259',{layers:16,alpha:.03,amt:.4}],
+      [ellipsePoly(360,300,520,340,14,.6),'#2A1A4E',{layers:14,alpha:.03,amt:.45}],
+      [ellipsePoly(1680,180,420,240,14,.6),'#0C2C40',{layers:12,alpha:.03,amt:.45}],
+      [ellipsePoly(300,880,480,240,14,.6),'#1E1846',{layers:12,alpha:.03,amt:.45}],
+    ]){wash(x,poly,col,o);await nf()}
+    FL.space=c}
+  {const r=EARTH.r,P=Math.round(r*.3),S2=Math.ceil((r+P)*2),c=document.createElement('canvas');c.width=c.height=S2;const x=c.getContext('2d'),o=S2/2;seed(341);
+    x.globalCompositeOperation='screen'; /* the scribbled ring of air round it: violet, blue, teal */
+    [[1.24,'#4B3A8E',.035],[1.15,'#3C6BD0',.045],[1.08,'#4FC3C8',.04]].forEach(([k,col,a])=>wash(x,ellipsePoly(o,o,r*k,r*k,22,.5),col,{layers:16,alpha:a,amt:.25}));
+    await nf();
+    /* the disc, as he coloured it: periwinkle sea, soft green land, white streaks of cloud */
+    x.globalCompositeOperation='source-over';x.save();x.beginPath();x.arc(o,o,r,0,6.2832);x.clip();
+    x.fillStyle='#92B2F6';x.fillRect(0,0,S2,S2);
+    wash(x,ellipsePoly(o-r*.25,o-r*.15,r*.9,r*.8,16,.5),'#7FA2F0',{layers:12,alpha:.06,amt:.35});
+    wash(x,ellipsePoly(o+r*.35,o+r*.3,r*.7,r*.6,16,.5),'#B4CDFB',{layers:12,alpha:.07,amt:.35});
+    [[-.38,.14,.21,.3],[.06,-.44,.17,.2],[.44,-.04,.13,.27],[.14,.52,.15,.16],[-.1,.06,.08,.1]].forEach(([dx,dy,rx,ry])=>wash(x,ellipsePoly(o+dx*r,o+dy*r,rx*r,ry*r,12,.7),'#9BDB8C',{layers:14,alpha:.1,amt:.4}));
+    for(let i=0;i<12;i++){const a=rnd(0,6.28),d=rnd(0,r*.8);wash(x,ellipsePoly(o+Math.cos(a)*d,o+Math.sin(a)*d,r*rnd(.18,.38),r*rnd(.05,.1),12,.6),'#FBFCFF',{layers:9,alpha:.12,amt:.45})}
+    x.globalCompositeOperation='multiply';wash(x,ellipsePoly(o-r*.7,o+r*.65,r*.8,r*.8,16,.4),'#5866B0',{layers:10,alpha:.045,amt:.3});
+    /* the sun is up to the left: the east limb, where the moon comes round, falls into night — with a few warm towns in it */
+    x.globalCompositeOperation='source-over';
+    {const sg=x.createRadialGradient(o-r*.5,o-r*.42,r*.25,o-r*.22,o-r*.16,r*1.5);sg.addColorStop(0,'rgba(8,10,34,0)');sg.addColorStop(.5,'rgba(8,10,34,0)');sg.addColorStop(.74,'rgba(12,14,44,.6)');sg.addColorStop(1,'rgba(4,5,20,.92)');x.fillStyle=sg;x.fillRect(0,0,S2,S2)}
+    x.globalCompositeOperation='lighter';
+    for(let i=0;i<90;i++){const a=rnd(-.9,1.9),d=r*Math.sqrt(rnd(.35,.97)),px=o+Math.cos(a)*d,py=o+Math.sin(a)*d;if(Math.hypot(px-(o-r*.22),py-(o-r*.16))<r*1.08)continue;
+      x.fillStyle=`rgba(255,${190+R()*40|0},110,${rnd(.25,.7).toFixed(2)})`;const z=rnd(1.2,3.2);x.beginPath();x.arc(px,py,z,0,6.2832);x.fill()}
+    x.restore();granulate(x,S2,S2);FL.earth={can:c,S:S2}}
+  await nf();
+  {const r=84,S2=Math.ceil(r*3),c=document.createElement('canvas');c.width=c.height=S2;const x=c.getContext('2d'),o=S2/2;seed(342);
+    x.globalCompositeOperation='screen';wash(x,ellipsePoly(o,o,r*1.35,r*1.35,18,.5),'#5D6A94',{layers:12,alpha:.05,amt:.3}); // white, wet: a damp halo
+    x.globalCompositeOperation='source-over';x.save();x.beginPath();x.arc(o,o,r,0,6.2832);x.clip();x.fillStyle='#ECEDF1';x.fillRect(0,0,S2,S2);
+    wash(x,ellipsePoly(o+r*.25,o+r*.3,r*.8,r*.7,12,.5),'#CDD2DE',{layers:10,alpha:.12,amt:.4});
+    [[-.3,-.2,.18],[.25,-.35,.12],[.1,.3,.15],[-.35,.35,.1]].forEach(([dx,dy,rr])=>wash(x,ellipsePoly(o+dx*r,o+dy*r,rr*r,rr*r*.8,10,.6),'#C4C9D7',{layers:8,alpha:.2,amt:.35}));
+    /* its seas (the darker grey), craters with a lit rim and a shadowed floor, and the same sun as the earth's: night on its right */
+    [[-.22,-.28,.34,.24],[.18,-.05,.26,.2],[-.05,.32,.22,.16],[.38,.3,.16,.12]].forEach(([dx,dy,rx,ry])=>wash(x,ellipsePoly(o+dx*r,o+dy*r,rx*r,ry*r,12,.6),'#A9AEBE',{layers:10,alpha:.16,amt:.35}));
+    for(let i=0;i<26;i++){const a=rnd(0,6.28),d=r*Math.sqrt(R())*.9,cx=o+Math.cos(a)*d,cy=o+Math.sin(a)*d,cr=r*Math.pow(R(),2)*.13+2.5;
+      x.strokeStyle='rgba(120,126,146,.55)';x.lineWidth=Math.max(1,cr*.22);x.beginPath();x.arc(cx+cr*.15,cy+cr*.15,cr,0,6.2832);x.stroke();
+      x.strokeStyle='rgba(255,255,255,.6)';x.lineWidth=Math.max(1,cr*.18);x.beginPath();x.arc(cx,cy,cr,Math.PI*.9,Math.PI*1.6);x.stroke()}
+    {const sg=x.createRadialGradient(o-r*.45,o-r*.35,r*.2,o-r*.15,o-r*.1,r*1.45);sg.addColorStop(0,'rgba(20,24,48,0)');sg.addColorStop(.55,'rgba(20,24,48,0)');sg.addColorStop(.8,'rgba(20,24,52,.45)');sg.addColorStop(1,'rgba(10,12,30,.8)');x.fillStyle=sg;x.fillRect(0,0,S2,S2)}
+    x.restore();granulate(x,S2,S2);FL.moon={can:c,S:S2}}
+  /* crayon over the dark: stars, his outline of the earth, the belt in white scribble with rocks hung in colour, his labels */
+  /* a violet-teal bloom screened over the dark when the colours come (翻折。蓝紫色。青光。) */
+  {const c=document.createElement('canvas');c.width=960;c.height=540;const x=c.getContext('2d');x.fillStyle='#000';x.fillRect(0,0,960,540);x.scale(.5,.5);x.globalCompositeOperation='screen';seed(344);
+    for(const [poly,col,o] of [
+      [ellipsePoly(1080,450,900,640,16,.5),'#5B3FA8',{layers:14,alpha:.05,amt:.4}],
+      [ellipsePoly(260,720,520,380,14,.6),'#23A7A2',{layers:14,alpha:.05,amt:.45}],
+      [ellipsePoly(520,140,520,240,14,.6),'#B5509A',{layers:12,alpha:.045,amt:.45}],
+      [ellipsePoly(1700,760,420,300,14,.6),'#3D5FD6',{layers:12,alpha:.045,amt:.45}],
+    ]){wash(x,poly,col,o);await nf()}
+    FL.bloom=c}
+  seed(343);L=[];
+  const starCols=['#FFFDF4','#FFFDF4','#FFFDF4','#F7C6E0','#B8F0E6','#D6CCFF','#FBE3A4'];
+  for(let i=0;i<90;i++){const sx=rnd(0,1920),sy=rnd(0,1000),s=rnd(2,7),col=starCols[i%starCols.length];if(Math.hypot(sx-EARTH.x,sy-EARTH.y)<EARTH.r+40)continue;S(L,[{x:sx-s,y:sy},{x:sx+s,y:sy}],col,s>5?4:3);if(s>5)S(L,[{x:sx,y:sy-s},{x:sx,y:sy+s}],col,3)}
+  S(L,kcircle(EARTH.x,EARTH.y,EARTH.r+5,1.12),'#A9C3F5',5);
+  const belt=[[-80,450],[110,548],[250,680],[350,840],[430,1120]];
+  for(let k=0;k<6;k++){const o=k*24-60,pts=resample(catmull(belt.map(([a,b])=>({x:a+o+rnd(-14,14),y:b-o*.35+rnd(-12,12)})),14),6),a=Math.floor(rnd(0,pts.length*.3)),b=Math.floor(pts.length*rnd(.65,1));S(L,pts.slice(a,b),'#EEEEF6',k%2?3:5)}
+  const rockCols=['#7FD1C7','#E79AC1','#9C8FE0','#F08C6B','#F2D27A','#8FD3F0'];FL.rocks=[];
+  const bc=resample(catmull(belt.map(([a,b])=>({x:a,y:b})),14),4);
+  for(let i=0;i<30;i++){const q=bc[Math.floor(rnd(0,bc.length))],px=q.x+rnd(-70,70),py=q.y+rnd(-40,40),rr=rnd(6,19),poly=ellipsePoly(px,py,rr,rr*rnd(.6,.9),9,.6);
+    F(L,poly,rnd(0,3),5,rockCols[i%6],5);S(L,densify(poly,4,true),'#F5F2EA',3);if(i%3===0)FL.rocks.push({x:px,y:py,r:rr,p:rnd(0,6.28)})}
+  handText(L,'地球',1452,604,58,'#A9C9F7');S(L,kline(1450,580,1418,556,1),'#A9C9F7',4);
+  handText(L,'小行星带',330,640,46,'#EEEEF6');S(L,kline(326,626,262,664,1),'#EEEEF6',4);
+  handText(L,'滑翔机',1200,792,40,SUN);S(L,kline(1330,786,1520,872,2),SUN,4);
+  handText(L,'我',1752,858,44,SUN);S(L,kline(1748,846,1690,912,1),SUN,4);
+  FL.spaceItems=L;
+  /* colours shaken loose off the rim: 离散出梦幻的色彩 */
+  FL.disp=Array.from({length:72},(_,k)=>({a:3.1+rnd(0,3.2),d:rnd(0,1.1),sp:rnd(40,150),s:rnd(2,6),col:rockCols[k%rockCols.length]}));
+  L=[];S(L,kcircle(0,0,90,1.1),'#D9DCE4',5);handText(L,'月球',-150,-92,50,'#CFD3DD');S(L,kline(-96,-86,-62,-66,1),'#CFD3DD',4);FL.moonItems=L;
+  /* the star river that follows the moon across: dense along its path */
+  FL.river=[];for(let i=0;i<300;i++){const u=Math.pow(R(),.9),p=moonAt(u),dx=gauss()*30,dy=gauss()*22;FL.river.push({u,x:p.x+dx,y:p.y+40+dy,s:rnd(1,3.2)})}
+  FL.mark=[];handText(FL.mark,'最高的地方',1196,720,46,SUN);FL.markRing=kellipse(GL_R.x,GL_R.y+40,210,120,1.15);
+  await buildGrand();
+  await buildOneTake();
+}
+/* ---- chapter 2 in one take: what the single camera over his shoulder needs — the field as a ground plane (seen in 2.5D), hills on its edge,
+   a sky that runs from blue to black, and three people in his crayon: Mother, Grandfather, and Cus himself for when he climbs out ---- */
+const FIELD={X0:-1400,Y1:1800,mpp:2.5,n:1120};          // the far field texture: x from −1400 m, y (forward) down from +1800 m, 2.5 m a pixel (tiles beyond)
+/* two finer layers over the middle of it, so the ground keeps its grain as he climbs: the hill (0.5 m a pixel) and the grass round the run (0.1 m a pixel) */
+const GLOD=[{k:'mid',X0:-300,X1:300,Y0:-220,Y1:480,mpp:.5,fade:[900,1500]},{k:'near',X0:-50,X1:50,Y0:-30,Y1:130,mpp:.1,fade:[40,110]}]; // fade: gone by this height (m)
+/* a pattern laid on the ground at an angle: the forward matrix canvas→texel for one strip, inverted for the pattern */
+function groundPat(pat,ang,mpp,xl,Ytop,m,k,sy){const ca=Math.cos(ang),sa=Math.sin(ang),Yk=Ytop+k*sy;
+  pat.setTransform(new DOMMatrix([ca*m/mpp,sa*m/mpp,-sa*k/mpp,ca*k/mpp,(ca*xl+sa*Yk)/mpp,(sa*xl-ca*Yk)/mpp]).inverse())}
+const MOM={X:-3.7,Y:1.6},GPA={X:7.8,Y:6.5};             // where they stand, in metres from the start of the run (x = to his right, y = ahead)
+/* soften a layer's edges to nothing, so the coarser layer under it shows through without a seam */
+function fadeEdges(c,fr=.16){const w=c.width,h=c.height,x=c.getContext('2d'),m=document.createElement('canvas');m.width=w;m.height=h;const mx=m.getContext('2d'),f=Math.min(w,h)*fr;
+  const gx=mx.createLinearGradient(0,0,w,0);gx.addColorStop(0,'rgba(0,0,0,0)');gx.addColorStop(f/w,'#000');gx.addColorStop(1-f/w,'#000');gx.addColorStop(1,'rgba(0,0,0,0)');mx.fillStyle=gx;mx.fillRect(0,0,w,h);
+  mx.globalCompositeOperation='destination-in';const gy=mx.createLinearGradient(0,0,0,h);gy.addColorStop(0,'rgba(0,0,0,0)');gy.addColorStop(f/h,'#000');gy.addColorStop(1-f/h,'#000');gy.addColorStop(1,'rgba(0,0,0,0)');mx.fillStyle=gy;mx.fillRect(0,0,w,h);
+  x.globalCompositeOperation='destination-in';x.drawImage(m,0,0);x.globalCompositeOperation='source-over';return c}
+/* paint a ground layer: draw(x,P) gets the context (paper already down, multiply on) and a metres→pixels mapper */
+function groundLayer(L,draw){const w=Math.round((L.X1-L.X0)/L.mpp),h=Math.round((L.Y1-L.Y0)/L.mpp),c=document.createElement('canvas');c.width=w;c.height=h;
+  const x=c.getContext('2d'),P=(X,Y)=>({x:(X-L.X0)/L.mpp,y:(L.Y1-Y)/L.mpp});x.fillStyle=PAPER;x.fillRect(0,0,w,h);x.globalCompositeOperation='multiply';draw(x,P,w,h);
+  x.globalCompositeOperation='source-over';L.can=fadeEdges(c);return c}
+/* grass hatching, batched by colour: n short upright strokes in a rectangle (px), skipping where skip(px,py) says */
+function hatch(x,w,h,list,len,skip){x.lineCap='round';for(const [col,n,lw] of list){x.strokeStyle=col;x.lineWidth=lw;x.globalAlpha=.5;x.beginPath();
+  for(let k=0;k<n;k++){const px=rnd(0,w),py=rnd(0,h);if(skip&&skip(px,py))continue;x.moveTo(px,py);x.lineTo(px+rnd(-.3,.3)*len,py-rnd(.5,1)*len)}x.stroke()}x.globalAlpha=1}
+async function buildOneTake(){
+  const P=(X,Y)=>({x:(X-FIELD.X0)/FIELD.mpp,y:(FIELD.Y1-Y)/FIELD.mpp});
+  const rq=(X0,Y0,X1,Y1,v=.25,j=0)=>{const a=P(X0,Y0),b=P(X1,Y1),x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y);
+    return[{x:x0+rnd(-j,j),y:y0+rnd(-j,j),v},{x:x1+rnd(-j,j),y:y0+rnd(-j,j),v},{x:x1+rnd(-j,j),y:y1+rnd(-j,j),v},{x:x0+rnd(-j,j),y:y1+rnd(-j,j),v}]};
+  const el=(X,Y,rx,ry,v=.4)=>{const c=P(X,Y);return ellipsePoly(c.x,c.y,rx/FIELD.mpp,ry/FIELD.mpp,16,v)};
+  seed(1200);
+  /* the patchwork: blocks of every size between the lanes, each split into fields of every green and straw, the whole grid turned a little off his line;
+     the hill they take off from stays one meadow */
+  const pal=['#B9D493','#E8DB94','#A9CB86','#CBE0A4','#D8E3A6','#E3D49A','#9FC27F','#C2D89A','#D7C98F','#C9B98A'],patches=[];
+  {const ang=.14,ca=Math.cos(ang),sa=Math.sin(ang),rot=(X,Y)=>({X:X*ca-Y*sa,Y:X*sa+Y*ca}),leaves=[];
+    const split=(x0,y0,x1,y1,d)=>{const w=x1-x0,h=y1-y0;if(d>3||w*h<rnd(14000,42000)){leaves.push([x0,y0,x1,y1]);return}
+      if(w>h*rnd(.7,1.3)){const s=x0+w*rnd(.32,.68);split(x0,y0,s,y1,d+1);split(s,y0,x1,y1,d+1)}else{const s=y0+h*rnd(.32,.68);split(x0,y0,x1,s,d+1);split(x0,s,x1,y1,d+1)}};
+    for(let gy=-1900;gy<2200;){const bh=rnd(260,430);for(let gx=-2100;gx<2100;){const bw=rnd(280,470);split(gx+5,gy+5,gx+bw-5,gy+bh-5,0);gx+=bw}gy+=bh}
+    for(const [x0,y0,x1,y1] of leaves){const pts=[[x0+1,y0+1],[x1-1,y0+1],[x1-1,y1-1],[x0+1,y1-1]].map(([X,Y])=>rot(X+rnd(-3,3),Y+rnd(-3,3)));
+      const cx=(pts[0].X+pts[2].X)/2,cy=(pts[0].Y+pts[2].Y)/2;
+      if(Math.pow((cx+60)/500,2)+Math.pow((cy-40)/400,2)<1||Math.abs(cx)>1450||cy<-1050||cy>1260)continue;
+      const kind=R();patches.push({pts,cx,cy,c:pal[Math.floor(R()*pal.length)],plow:kind<.12,orch:kind>.92})}}
+  const rv=Array.from({length:16},(_,i)=>{const X=-1500+i*200;return{X,Y:470+Math.sin(X/330)*80}});
+  const band=(pts,hw,v=.2)=>[...pts.map(p=>({...P(p.X,p.Y+hw),v})),...pts.slice().reverse().map(p=>({...P(p.X,p.Y-hw),v}))];
+  const woods=Array.from({length:18},()=>({X:rnd(-1350,1350),Y:rnd(-950,1150),rx:rnd(40,110),ry:rnd(30,80)})).filter(w=>!(Math.abs(w.X)<520&&w.Y>-380&&w.Y<420));
+  const town=Array.from({length:70},()=>({X:rnd(-900,900),Y:rnd(1300,1750)}));
+  FL.field=await paintBaseFull([
+    [rq(-1500,-1100,1500,1900,.2),'#CFE0AA',{layers:12,alpha:.05,amt:.2}],
+    ...patches.map(p=>[p.pts.map(q=>({...P(q.X,q.Y),v:.22})),p.plow?'#C7A77A':p.c,{layers:8,alpha:.07,amt:.22}]),
+    [el(-60,40,520,400),'#BFD995',{layers:12,alpha:.05}],[el(-60,40,330,250),'#AED08A',{layers:10,alpha:.05}],[el(-60,40,170,130),'#A0C67F',{layers:10,alpha:.05}],
+    ...woods.map(w=>[el(w.X,w.Y,w.rx,w.ry,.5),'#7FA466',{layers:10,alpha:.08}]),
+    [band(rv,14),'#9DC3EC',{layers:14,alpha:.09,amt:.12}],
+    [el(640,-560,150,95,.3),'#9CC2E6',{layers:12,alpha:.09}],
+    [rq(-1000,1260,1000,1780,.3),'#DCD3C4',{layers:10,alpha:.05}],
+    ...town.map(t=>[rq(t.X,t.Y,t.X+rnd(10,22),t.Y+rnd(8,16),.05),['#D9B9A0','#C9C2B8','#E4D2B2'][Math.floor(R()*3)],{layers:6,alpha:.14,amt:.1}]),
+    [rq(-3.5,-12,3.5,96,.03),'#ECE7C2',{layers:10,alpha:.12,amt:.05}],                 // the worn strip of the take-off run
+    [rq(-80,-60,-40,-20,.05),'#DCCBA6',{layers:8,alpha:.1,amt:.1}],[rq(-70,-52,-54,-36,.03),'#C9705A',{layers:8,alpha:.18,amt:.08}], // grandfather's yard and roof
+  ],FIELD.n,FIELD.n);
+  /* his crayon over the map, at twice the resolution: shown only once he is high enough to see it as a map */
+  {const Q=(X,Y)=>{const p=P(X,Y);return{x:p.x*2,y:p.y*2}},L=[];
+    for(const p of patches){const q=p.pts.map(o=>Q(o.X,o.Y));for(let e=0;e<4;e++)if(hh(Math.round(p.cx*7+p.cy*13)+e*31)<.75)S(L,kline(q[e].x,q[e].y,q[(e+1)%4].x,q[(e+1)%4].y,1.2),'#86A266',3); // hedges on most edges
+      if(p.plow)for(let k=1;k<7;k++){const a=k/7,A={x:lerp(q[0].x,q[1].x,a),y:lerp(q[0].y,q[1].y,a)},B={x:lerp(q[3].x,q[2].x,a),y:lerp(q[3].y,q[2].y,a)};S(L,[A,B],'#9C7A52',2)} // furrows
+      if(p.orch)for(let k=0;k<12;k++){const a=(k%4+.5)/4,b=(Math.floor(k/4)+.5)/3,A={x:lerp(lerp(q[0].x,q[1].x,a),lerp(q[3].x,q[2].x,a),b),y:lerp(lerp(q[0].y,q[1].y,a),lerp(q[3].y,q[2].y,a),b)};S(L,kcircle(A.x,A.y,3.5,1.2),'#5F8050',3)}}
+    for(const o of [-14,14])S(L,resample(catmull(rv.map(p=>Q(p.X,p.Y+o)),10),6),'#5C86C8',4);
+    S(L,resample(catmull([Q(-560,-120),Q(-700,-60),Q(-1000,-160),Q(-1400,-200)],10),6),'#C8B48A',4);  // the lane out of the valley
+    for(const w of woods)for(let k=0;k<5;k++){const c=Q(w.X+rnd(-w.rx,w.rx)*.6,w.Y+rnd(-w.ry,w.ry)*.6);S(L,kcircle(c.x,c.y,rnd(5,9),1.2),'#5F8050',3)}
+    for(const t of town){const a=Q(t.X,t.Y);box(L,a.x,a.y-10,a.x+14,a.y,'#8E8578',2)}
+    const lc=document.createElement('canvas');lc.width=lc.height=FIELD.n*2;const lx=lc.getContext('2d');drawItems(lx,L,0,0,1,0,0);toothOn(lx,lc.width,lc.height);FL.fieldL=lc}
+  await nf();
+  /* the hill, finer: its contour rings, Grandfather's house and yard and fence, the pond, trees with their shadows, sheep, the worn run */
+  groundLayer(GLOD[0],(x,P,w,h)=>{const mpp=GLOD[0].mpp,E=(X,Y,rx,ry,v=.5)=>{const c=P(X,Y);return ellipsePoly(c.x,c.y,rx/mpp,ry/mpp,16,v)};
+    const RQ=(X0,Y0,X1,Y1,v=.1)=>{const a=P(X0,Y1),b=P(X1,Y0);return rectP(a.x,a.y,b.x,b.y,v)};
+    seed(1300);
+    wash(x,rectP(-40,-40,w+40,h+40,.2),'#CFE0AA',{layers:12,alpha:.05,amt:.2});wash(x,E(-60,40,520,400),'#BFD995',{layers:12,alpha:.05});
+    [[330,250],[170,130],[70,55]].forEach(([rx,ry],i)=>wash(x,E(-60,40,rx,ry),['#AED08A','#A0C67F','#97BE76'][i],{layers:10,alpha:.05}));
+    for(let k=0;k<60;k++)wash(x,E(rnd(-290,290),rnd(-210,470),rnd(12,50),rnd(10,40)),['#C9DDA0','#B3D08C','#D9E2A0','#A9C987'][k%4],{layers:6,alpha:.06});
+    const trees=[];for(let k=0;k<70;k++){const X=rnd(-280,280),Y=rnd(-200,460);if(Math.abs(X)<14&&Y>-20&&Y<120)continue;if(X>-95&&X<-25&&Y>-75&&Y<-5)continue;trees.push({X,Y,r:rnd(3,7.5)})}
+    for(let k=0;k<14;k++){const X=rnd(-260,260),Y=rnd(-180,440);if(Math.abs(X)<30&&Y>-30&&Y<130)continue;for(let q=0;q<7;q++)trees.push({X:X+gauss()*9,Y:Y+gauss()*7,r:rnd(3,6)})} // copses
+    for(const t of trees)wash(x,E(t.X+t.r*.6,t.Y-t.r*.5,t.r*1.1,t.r*.9,.3),'#9FB78E',{layers:6,alpha:.12,amt:.2}); // their shadows
+    hatch(x,w,h,[['#7E9E60',9000,1.4],['#93B271',9000,1.2],['#A9C482',7000,1.1]],4);
+    x.globalCompositeOperation='source-over';wash(x,RQ(-1.8,-12,1.8,98),'#E9E2BC',{layers:10,alpha:.08,amt:.06});wash(x,RQ(-84,-64,-36,-16),'#E6D8B4',{layers:8,alpha:.1,amt:.1});x.globalCompositeOperation='multiply';
+    wash(x,E(150,-130,28,18,.3),'#A9CCEB',{layers:12,alpha:.14,amt:.25});x.globalCompositeOperation='source-over';
+    const L=[],Q=P;
+    {const a=Q(-70,-36),b=Q(-54,-52),roof=rectP(a.x,a.y,b.x,b.y,.05);F(L,roof,.6,5,'#C9705A',5);box(L,a.x,a.y,b.x,b.y,'#8E3F2E',3);S(L,kline(a.x,(a.y+b.y)/2,b.x,(a.y+b.y)/2,.5),'#8E3F2E',3)}
+    {const a=Q(-84,-16),b=Q(-36,-64);for(const [p,q] of [[a,{x:b.x,y:a.y}],[{x:b.x,y:a.y},b],[b,{x:a.x,y:b.y}],[{x:a.x,y:b.y},a]]){const n=12;for(let k=0;k<n;k+=2)S(L,[{x:lerp(p.x,q.x,k/n),y:lerp(p.y,q.y,k/n)},{x:lerp(p.x,q.x,(k+1)/n),y:lerp(p.y,q.y,(k+1)/n)}],'#8B6A45',3)}} // the fence
+    S(L,resample(catmull([Q(-60,-64),Q(-120,-100),Q(-220,-120),Q(-320,-110)],10),5),'#C8B48A',5); // the lane
+    [[330,250],[170,130],[70,55]].forEach(([rx,ry])=>{const c=Q(-60,40);S(L,kellipse(c.x,c.y,rx/mpp,ry/mpp),'#7E9E62',2.5)});
+    for(const t of trees){const c=Q(t.X,t.Y),r=t.r/mpp,p=ellipsePoly(c.x,c.y,r,r*.92,10,.3);F(L,p,.5,4,'#7FA466',5);S(L,kcircle(c.x,c.y,r,1.2),'#5F8050',3)}
+    for(let k=0;k<7;k++){const c=Q(rnd(60,240),rnd(120,300)),p=ellipsePoly(c.x,c.y,5,3.4,8,.1);F(L,p,.4,3,'#FBF8F0',4);S(L,densify(p,3,true),'#8A8896',2);S(L,kcircle(c.x+5.5,c.y,1.6,1.2),'#3E3A48',3)} // sheep
+    for(const s of [-.8,.8])S(L,[Q(s,-10),Q(s,96)],'#B8A980',2.5);
+    for(let k=0;k<12;k++)S(L,[Q(0,k*8),Q(0,k*8+4)],SUN_D,3); // his run, dashed in yellow (only reads once he is high)
+    const c=document.createElement('canvas');c.width=w;c.height=h;const cx=c.getContext('2d');drawItems(cx,L,0,0,1,0,0);toothOn(cx,w,h);x.globalCompositeOperation='source-over';x.drawImage(c,0,0)});
+  await nf();
+  /* the grass right round the run: the meadow's own green, hatching in four greens, flowers, the pale worn strip with its two ruts */
+  groundLayer(GLOD[1],(x,P,w,h)=>{seed(1310);
+    wash(x,rectP(-40,-40,w+40,h+40,.2),'#B9D48F',{layers:12,alpha:.06,amt:.2});
+    for(let k=0;k<50;k++){const c=P(rnd(-50,50),rnd(-30,130));wash(x,ellipsePoly(c.x,c.y,rnd(30,110),rnd(20,80),12,.5),['#C9DDA0','#A9C987','#D9E2A0'][k%3],{layers:6,alpha:.06,amt:.4})}
+    {const a=P(-1.6,100),b=P(1.6,-12);x.globalCompositeOperation='source-over';wash(x,rectP(a.x,a.y,b.x,b.y,.05),'#E9E2BC',{layers:10,alpha:.09,amt:.05});x.globalCompositeOperation='multiply'} // the worn strip, paler than the grass
+    const top=P(0,98).y,bot=P(0,-10).y,cxp=P(0,0).x;
+    hatch(x,w,h,[['#5E8448',2600,1.8],['#6E9455',2800,1.6],['#82A564',2600,1.5],['#97B873',1800,1.4]],8,(px,py)=>Math.abs(px-cxp)<14&&py>top&&py<bot&&R()<.85);
+    x.globalCompositeOperation='source-over';x.globalAlpha=.55;x.strokeStyle='#B9AA82';x.lineWidth=3;for(const s of [-.8,.8]){x.beginPath();for(let Y=-12;Y<=98;Y+=2){const p=P(s+Math.sin(Y*.3)*.05,Y);if(Y===-12)x.moveTo(p.x,p.y);else x.lineTo(p.x,p.y)}x.stroke()}
+    x.globalAlpha=1;for(let k=0;k<300;k++){const px=rnd(0,w),py=rnd(0,h);x.fillStyle=['#FBF8F0','#F6E27A','#E9A9C0','#C9B8F0','#FBF8F0'][k%5];x.beginPath();x.arc(px,py,rnd(1.6,3.6),0,6.2832);x.fill()}});
+  await nf();
+  /* beyond the map: a patchwork tile that repeats to the horizon (no landmarks in it, so the repeat doesn't show) */
+  {const n=1024,mpp=2.5,M=n*mpp,c=document.createElement('canvas');c.width=c.height=n;const x=c.getContext('2d');seed(1330);
+    x.fillStyle=PAPER;x.fillRect(0,0,n,n);x.globalCompositeOperation='multiply';wash(x,rectP(-40,-40,n+40,n+40,.2),'#CFE0AA',{layers:10,alpha:.05,amt:.2});
+    const leaves=[],split=(x0,y0,x1,y1,d)=>{const w=x1-x0,h=y1-y0;if(d>4||w*h<rnd(14000,42000)){leaves.push([x0,y0,x1,y1]);return}
+      if(w>h*rnd(.7,1.3)){const s=x0+w*rnd(.32,.68);split(x0,y0,s,y1,d+1);split(s,y0,x1,y1,d+1)}else{const s=y0+h*rnd(.32,.68);split(x0,y0,x1,s,d+1);split(x0,s,x1,y1,d+1)}};
+    split(0,0,M,M,0);const L=[];
+    for(const [x0,y0,x1,y1] of leaves){const q=[[x0+5,y0+5],[x1-5,y0+5],[x1-5,y1-5],[x0+5,y1-5]].map(([a,b])=>({x:a/mpp,y:b/mpp,v:.2})),plow=R()<.12;
+      wash(x,q,plow?'#C7A77A':pal[Math.floor(R()*pal.length)],{layers:7,alpha:.07,amt:.2});
+      for(let e=0;e<4;e++)if(R()<.7)S(L,kline(q[e].x,q[e].y,q[(e+1)%4].x,q[(e+1)%4].y,1),'#86A266',2.5)}
+    for(let k=0;k<10;k++){const wx=rnd(80,n-80),wy=rnd(80,n-80);wash(x,ellipsePoly(wx,wy,rnd(15,40),rnd(12,30),12,.5),'#7FA466',{layers:8,alpha:.08})}
+    const lc=document.createElement('canvas');lc.width=lc.height=n;const lx=lc.getContext('2d');drawItems(lx,L,0,0,1,0,0);toothOn(lx,n,n);
+    x.globalCompositeOperation='source-over';x.drawImage(lc,0,0);granulate(x,n,n);FL.fieldTile=c;FL.tileMpp=mpp}
+  fadeEdges(FL.field,.12);fadeEdges(FL.fieldL,.12);
+  /* cloud shadows: soft blue-grey blotches on a long period of their own, multiplied over the ground, so the patchwork's repeat never lines up */
+  {const n=256,c=document.createElement('canvas');c.width=c.height=n;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,n,n);seed(1340);
+    for(let k=0;k<11;k++){const bx=rnd(0,n),by=rnd(0,n),r=rnd(18,46),a=rnd(.25,.5);for(const ox of [-n,0,n])for(const oy of [-n,0,n]){const g=x.createRadialGradient(bx+ox,by+oy,0,bx+ox,by+oy,r);g.addColorStop(0,`rgba(120,138,160,${a})`);g.addColorStop(1,'rgba(120,138,160,0)');x.fillStyle=g;x.fillRect(bx+ox-r,by+oy-r,r*2,r*2)}}
+    FL.groundShade=c}
+  await nf();
+  /* the hills along the horizon: a far blue-grey ridge, a near green one */
+  {const c=document.createElement('canvas');c.width=2400;c.height=300;const x=c.getContext('2d');
+    const ridge=(base,amp,fr,ph)=>{const p=[];for(let i=0;i<=24;i++){const X=-100+i*110;p.push({x:X,y:base-amp*(.55+.45*Math.sin(X/fr+ph))-rnd(0,amp*.2),v:.25})}p.push({x:2500,y:330,v:.1},{x:-100,y:330,v:.1});return p};
+    wash(x,ridge(250,130,240,1),'#B4C6D2',{layers:12,alpha:.07,amt:.18});wash(x,ridge(285,85,180,2.6),'#A3BE93',{layers:14,alpha:.08,amt:.18});FL.hills=c}
+  /* the sky above the cloud: summer blue → a blue deeper than any blue → violet → the black (no moon in it: the moon is waiting behind the earth) */
+  /* (one smooth gradient, the watercolour only as soft blooms inside it, so it never reads as stripes) */
+  {const c=document.createElement('canvas');c.width=960;c.height=2160;const x=c.getContext('2d'),g=x.createLinearGradient(0,0,0,2160);
+    [[0,'#05071A'],[.1,'#0B0F2C'],[.2,'#1D1B4E'],[.3,'#3B2F78'],[.4,'#3E4AA6'],[.5,'#2F62C6'],[.62,'#4A86DA'],[.75,'#7EB0EC'],[.88,'#A8CBF2'],[1,'#C9DFF6']].forEach(([o,cl])=>g.addColorStop(o,cl));
+    x.fillStyle=g;x.fillRect(0,0,960,2160);x.save();x.scale(.5,.5);seed(1320);
+    for(const [Y,col] of [[300,'#2A1F5E'],[700,'#4A3C8E'],[1100,'#3256B8'],[1500,'#2F6BCB'],[1900,'#5A92DE'],[2500,'#8DB8EE'],[3200,'#B3D0F4']])
+      for(let k=0;k<3;k++){wash(x,ellipsePoly(rnd(0,1920),Y+rnd(-150,150),rnd(400,800),rnd(120,260),14,.6),col,{layers:10,alpha:.045,amt:.4});await nf()}
+    x.restore();granulate(x,960,2160);FL.deep=c}
+  const ink='#3E3A48',skin='#F1CFB0';let L;
+  /* Mother: blue dress, a hand up against the sun (feet at 0,0; 1 unit = 1 cm) */
+  seed(860);L=[];{const dr=polyP([[-15,-122],[15,-122],[32,-40],[-32,-40]],.05);F(L,dr,.9,7,'#4D6FB8',7);S(L,densify(dr,6,true),ink,4);
+    S(L,kline(-9,-40,-10,-3,1),ink,5);S(L,kline(9,-40,10,-3,1),ink,5);S(L,kline(-17,-2,-5,-2,.5),ink,5);S(L,kline(5,-2,17,-2,.5),ink,5);
+    const hd=ellipsePoly(0,-140,15,16,10,.08);F(L,hd,.4,4,skin,6);S(L,densify(hd,4,true),ink,4);
+    F(L,polyP([[-17,-140],[-14,-157],[0,-162],[14,-157],[17,-140],[10,-150],[-10,-150]],.04),.2,4,'#5B3B2C',6);S(L,kline(-15,-146,-21,-114,1),'#5B3B2C',6);
+    S(L,kline(14,-118,30,-136,1),ink,5);S(L,kline(30,-136,6,-151,1),ink,5);S(L,kline(-14,-116,-24,-76,1),ink,5)}
+  FL.mom=L;
+  /* Grandfather: brown coat, white hair, a stick */
+  seed(861);L=[];{const ct=polyP([[-16,-118],[16,-118],[22,-44],[-22,-44]],.05);F(L,ct,.9,7,'#7B5B3F',7);S(L,densify(ct,6,true),ink,4);
+    S(L,kline(-8,-44,-9,-3,1),ink,5);S(L,kline(8,-44,9,-3,1),ink,5);
+    const hd=ellipsePoly(0,-134,13,14,10,.08);F(L,hd,.4,4,skin,6);S(L,densify(hd,4,true),ink,4);
+    S(L,[{x:-14,y:-138},{x:-8,y:-148},{x:0,y:-150},{x:8,y:-148},{x:14,y:-138}],'#F4F2EC',6);
+    S(L,kline(16,-110,28,-62,1),ink,4);S(L,kline(28,-62,30,-2,1),'#5A4632',4)}
+  FL.gpa=L;
+  /* Cus, from behind and from the front — yellow fur, white hoodie, black shorts, the bag across him, the big tail with its white tip (feet at 0,0) */
+  const fur='#F3C93F',furD='#C99A1C',blk='#2C2C33',wht='#F6F4EE',gry='#8A8896';
+  const legs=L=>{S(L,kline(-9,-38,-10,-9,1),fur,9);S(L,kline(9,-38,10,-9,1),fur,9);
+    for(const sx of [-11,11]){const s=ellipsePoly(sx,-5,11,6,8,.1);F(L,s,.2,4,wht,5);S(L,densify(s,4,true),blk,4)}
+    F(L,polyP([[-21,-66],[21,-66],[24,-34],[3,-34],[0,-46],[-3,-34],[-24,-34]],.04),.3,5,blk,6)};
+  const shirt=polyP([[-22,-114],[22,-114],[32,-96],[25,-90],[23,-62],[-23,-62],[-25,-90],[-32,-96]],.04);
+  const ears=L=>{for(const sx of [-1,1]){const e=polyP([[sx*21,-148],[sx*17,-176],[sx*6,-154]],.02);F(L,e,.2,3,fur,6);S(L,densify(e,3,true),furD,4)}};
+  seed(870);L=[];legs(L);F(L,shirt,1.2,6,wht,7);S(L,densify(shirt,5,true),gry,4);S(L,arcP(0,-112,15,8,0,Math.PI,10),gry,4);
+  S(L,kline(-27,-100,-31,-70,1),fur,9);S(L,kline(27,-100,31,-70,1),fur,9);
+  S(L,kline(17,-112,-19,-72,1),blk,5);F(L,polyP([[-29,-80],[-13,-80],[-13,-64],[-29,-64]],.03),.3,4,blk,6);
+  {const tail=polyP([[2,-58],[22,-66],[42,-86],[50,-112],[42,-120],[34,-102],[18,-82],[0,-68]],.06);F(L,tail,.7,6,fur,8);S(L,densify(tail,5,true),furD,4);
+    F(L,polyP([[44,-104],[50,-112],[42,-120],[37,-110]],.02),.2,3,wht,6)}
+  {const hd=ellipsePoly(0,-136,23,22,12,.12);F(L,hd,.5,5,fur,8);S(L,densify(hd,4,true),furD,4);
+    S(L,[{x:-15,y:-150},{x:-10,y:-161},{x:-5,y:-151},{x:0,y:-163},{x:5,y:-151},{x:11,y:-160},{x:16,y:-149}],furD,4)}
+  /* in chapter 2 he has his flying cap on: the same back, the cap over his head (ears through it), goggles' band, straps lying on his shoulders */
+  const capped=[...L];{const sv=R;seed(873);const cap=[];for(let q=0;q<=12;q++){const a=Math.PI+q/12*Math.PI;cap.push({x:Math.cos(a)*25,y:-134+Math.sin(a)*25,v:.05})}cap.push({x:23,y:-128,v:.05},{x:-23,y:-128,v:.05});
+    F(capped,cap,.9,4,CAP,6);S(capped,densify(cap,4,true),CAP_D,3);S(capped,[{x:-25,y:-140},{x:0,y:-136},{x:25,y:-140}],'#3A3A44',4);
+    S(capped,densify([{x:-20,y:-128},{x:-25,y:-118},{x:-30,y:-108}],3),CAP_D,4);S(capped,densify([{x:20,y:-128},{x:26,y:-117},{x:33,y:-109}],3),CAP_D,4);R=sv}
+  ears(capped);FL.cusBackCap=capped;
+  ears(L);FL.cusBack=L;
+  seed(871);L=[];
+  {const tl=polyP([[-2,-58],[-22,-66],[-42,-86],[-50,-112],[-42,-120],[-34,-102],[-18,-82],[0,-68]],.06);F(L,tl,.7,6,fur,8);S(L,densify(tl,5,true),furD,4);
+    F(L,polyP([[-44,-104],[-50,-112],[-42,-120],[-37,-110]],.02),.2,3,wht,6)}
+  legs(L);F(L,shirt,1.2,6,wht,7);S(L,densify(shirt,5,true),gry,4);S(L,kline(8,-112,8,-64,.5),fur,5);
+  S(L,kline(-27,-100,-31,-70,1),fur,9);S(L,kline(27,-100,31,-70,1),fur,9);
+  S(L,kline(-17,-112,19,-72,1),blk,5);F(L,polyP([[13,-80],[29,-80],[29,-64],[13,-64]],.03),.3,4,blk,6);
+  {const hd=ellipsePoly(0,-136,23,22,12,.12);F(L,hd,.5,5,fur,8);S(L,densify(hd,4,true),furD,4);
+    const mz=ellipsePoly(0,-127,11,8,10,.05);F(L,mz,.3,3,wht,5);
+    S(L,kcircle(-8,-140,2.6,1.4),blk,4);S(L,kcircle(8,-140,2.6,1.4),blk,4);S(L,arcP(0,-128,6,5,.25,Math.PI-.25,8),'#B4553E',3);
+    S(L,[{x:-15,y:-150},{x:-9,y:-158},{x:-4,y:-149},{x:1,y:-159},{x:6,y:-149},{x:12,y:-157},{x:16,y:-148}],furD,4)}
+  ears(L);FL.cusFront=L;
+  /* the glider parked: the side view, nobody in it, standing on its two wheels */
+  seed(809);L=[];{const gk='#2F3036';
+    const wing=polyP([[-232,-16],[232,-24],[234,-8],[-230,0]],.05);F(L,wing,.1,11,'#F7D66E',6);S(L,densify(wing,6,true),gk,4);
+    const body=polyP([[-92,6],[40,-12],[98,4],[44,22],[-82,18]],.05);F(L,body,.25,8,SUN,7);S(L,densify(body,6,true),gk,5);
+    S(L,kline(-86,8,-116,-36,1),gk,5);S(L,kline(-116,-36,-76,-30,1),gk,4);S(L,kline(-60,-6,-30,12,1),gk,4);S(L,kline(70,-14,40,10,1),gk,4);
+    S(L,arcP(14,-10,22,12,Math.PI*1.05,Math.PI*1.95,10),gk,4);S(L,kline(104,-16,104,24,1),gk,4);S(L,kline(90,4,118,4,1),gk,4);
+    S(L,kline(-40,20,-44,38,1),gk,4);S(L,kcircle(-44,43,6,1.2),gk,4);S(L,kline(40,20,44,38,1),gk,4);S(L,kcircle(44,43,6,1.2),gk,4)}
+  FL.gliderPark=L;
+}
+/* ---- the grand view's pieces: rocks as little crayon sprites (3 boil frames each), the band ahead of him, the moon's orbit round the earth, glows ---- */
+/* a rock as he would colour it, but grown up a little: a grey-brown body, a crater or two, a light rim on the sun side and a shadow away from it */
+const ROCK_COLS=['#8E8B96','#A29C93','#7C8597','#9B8E84','#B2ADA6','#6F7584','#A49A8C','#8D97A7','#9AA3C4','#B3A1B6'];
+function makeRock(k,px){seed(900+k);const L=[],r=27,poly=ellipsePoly(36,36,r*rnd(.82,1),r*rnd(.6,.86),9,.7),col=ROCK_COLS[k%ROCK_COLS.length];
+  F(L,poly,rnd(0,3),4,col,7);
+  for(let q=0;q<1+(k%3);q++){const a=rnd(0,6.28),d=rnd(0,r*.42);S(L,kcircle(36+Math.cos(a)*d,36+Math.sin(a)*d*.7,rnd(2.5,5),1.1),'#5D5F6E',2)}
+  S(L,densify(poly,4,true),'#DCD9E6',2.5);
+  const s=px/72;
+  return[0,1,2].map(v=>{const c=document.createElement('canvas');c.width=c.height=px;const x=c.getContext('2d');drawItems(x,L,0,0,s,0,v);
+    x.globalCompositeOperation='source-atop';const g=x.createRadialGradient(22*s,20*s,3*s,40*s,46*s,38*s);
+    g.addColorStop(0,'rgba(255,248,236,.42)');g.addColorStop(.42,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(12,14,36,.66)');x.fillStyle=g;x.fillRect(0,0,px,px);
+    x.globalCompositeOperation='source-over';toothOn(x,px,px);return c})}
+async function buildGrand(){
+  const cols=ROCK_COLS;
+  FL.rockSpr=[];for(let k=0;k<16;k++)FL.rockSpr.push(makeRock(k,72));
+  FL.bigRock=[];for(let k=0;k<6;k++)FL.bigRock.push(makeRock(20+k,300));
+  await nf();
+  seed(950);
+  /* stars on their own (no labels, no belt): the grand view has no handwriting in it */
+  FL.starItems=[];const sc=['#FFFDF4','#FFFDF4','#FFFDF4','#FFFDF4','#F7C6E0','#B8F0E6','#D6CCFF','#FBE3A4'];
+  for(let i=0;i<230;i++){const sx=rnd(0,1920),sy=rnd(0,1080),s=Math.pow(R(),2.2)*6+1.2,col=sc[i%sc.length];S(FL.starItems,[{x:sx-s,y:sy},{x:sx+s,y:sy}],col,s>4.2?4:2.5);if(s>4.2)S(FL.starItems,[{x:sx,y:sy-s},{x:sx,y:sy+s}],col,3)}
+  /* the band ahead of him, looking away from the earth: fewer rocks, bigger, and the colour of rock */
+  FL.beltRocks=Array.from({length:230},()=>({dw:.35+Math.pow(R(),1.6)*85,u:gauss()*.6,h:gauss()*.05,s:rnd(.06,.26),k:Math.floor(R()*16),col:cols[Math.floor(R()*cols.length)]})).sort((a,b)=>b.dw-a.dw);
+  /* the moon's tail: rocks all round the orbit, each with its own pace */
+  FL.ringRocks=Array.from({length:300},(_,n)=>({th:n%4<1?1.5708+gauss()*1.1:R()*6.2832,dr:gauss()*.035,dy:gauss()*.012,s:rnd(.5,1.5),w:rnd(.75,1.25),k:Math.floor(R()*16)}));
+  /* the big ones round him in the foreground: the near side of the same orbit, so they drift the same way (right to left), the nearest fastest */
+  FL.footRocks=[[80,1000,220],[380,1080,300],[820,1010,170],[1080,1120,340],[1320,990,150],[1760,1060,260],[2140,1000,200]].map(([x,y,s],i)=>({x,y,s,k:(i+2)%6,p:R()*6.28,sp:s*.06}));
+  /* the far sky of the grand view, flattened once: the dark, a dust of tiny stars, and the milky way running low-left to high-right behind the earth */
+  {const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');x.drawImage(FL.space,0,0,W,H);
+    for(let i=0;i<1600;i++){const b=Math.pow(R(),3);x.fillStyle=`rgba(255,${235+R()*20|0},${225+R()*30|0},${(.18+.6*b).toFixed(2)})`;const z=b>.75?1.7:1;x.fillRect(rnd(0,W),rnd(0,H),z,z)}
+    const m=document.createElement('canvas');m.width=W;m.height=H;const mx=m.getContext('2d'),ang=-.4,ca=Math.cos(ang),sa=Math.sin(ang),c0={x:980,y:600};
+    const at=(u,w)=>({x:c0.x+ca*u-sa*w,y:c0.y+sa*u+ca*w});
+    const ell=(u,w,rx,ry,v=.5)=>{const p=at(u,w);return ellipsePoly(0,0,rx,ry,14,v).map(q=>({x:p.x+q.x*ca-q.y*sa,y:p.y+q.x*sa+q.y*ca,v:q.v}))};
+    mx.globalCompositeOperation='lighter';
+    for(const [col,wd,a] of [['#26296A',190,.05],['#45337E',120,.05],['#1C5872',90,.04],['#73396F',70,.035],['#8C6A5A',50,.03]])
+      for(let k=0;k<9;k++)wash(mx,ell(-1350+k*340+rnd(-70,70),gauss()*24,rnd(240,420),wd*rnd(.7,1.25)),col,{layers:9,alpha:a,amt:.4});
+    for(let i=0;i<6500;i++){const u=rnd(-1400,1400),w=gauss()*(80+40*Math.sin(u/230)),p=at(u,w),b=Math.pow(R(),3);
+      mx.fillStyle=`rgba(${225+R()*30|0},${220+R()*35|0},255,${(.12+.62*b).toFixed(2)})`;const z=b>.7?1.8:1.05;mx.fillRect(p.x,p.y,z,z)}
+    mx.globalCompositeOperation='destination-out';for(let k=0;k<7;k++)wash(mx,ell(-1000+k*320,rnd(-26,26),rnd(140,260),rnd(16,30)),'#000',{layers:8,alpha:.07,amt:.5}); // dust lanes
+    x.drawImage(m,0,0);FL.spaceGrand=c;
+    const g=document.createElement('canvas');g.width=480;g.height=270;const gx=g.getContext('2d');gx.filter='blur(7px)';gx.drawImage(m,0,0,480,270);gx.filter='none';FL.milkyGlow=g}
+  await nf();
+  /* the earth's own light: a soft ring of air round the limb */
+  {const r=E2.r,S2=Math.ceil(r*3.2),c=document.createElement('canvas');c.width=c.height=S2;const x=c.getContext('2d'),o=S2/2,g=x.createRadialGradient(o,o,r*.86,o,o,r*1.6);
+    g.addColorStop(0,'rgba(120,170,255,0)');g.addColorStop(.12,'rgba(150,200,255,.55)');g.addColorStop(.3,'rgba(120,150,255,.22)');g.addColorStop(.6,'rgba(140,100,220,.08)');g.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=g;x.fillRect(0,0,S2,S2);FL.earthGlow={can:c,S:S2}}
+}
+function moonAt(u){const a=(1-u)*(1-u),b=2*u*(1-u),c=u*u;return{x:a*MOON0.x+b*MOON1.x+c*MOON2.x,y:a*MOON0.y+b*MOON1.y+c*MOON2.y}}
+const BGS={};let bgReady=false;
+async function buildBGs(){
+  const blue='#36539A',red='#B4553E',yel='#F2A766',amber='#E58A55',grn='#5F8050',brn='#7B5B3F',gray='#4E4D58',ink='#2F3036';
+  /* Cus's room, a July afternoon */
+  seed(301);let L=[];
+  const room=await paintBase([
+    [bandPoly(-320,840,10,.5),'#F6E4D2',{layers:22,alpha:.03}],   // wall and floor overlap, so no paper gap shows between them
+    [bandPoly(640,1240,10,.3),'#E8D0AE',{layers:24,alpha:.04,amt:.3}],
+    [rectP(1180,150,1640,520),'#D3E4F7',{layers:18,alpha:.035,amt:.12}],
+    [polyP([[1010,790],[1480,790],[1700,1010],[1160,1010]]),'#FBEFC2',{layers:20,alpha:.04,amt:.2}],
+    [rectP(180,610,1070,860,.25),'#C9D8EE',{layers:22,alpha:.04,amt:.25}],
+  ]);
+  box(L,1180,150,1640,520,blue,6);S(L,kline(1410,152,1410,518,1),blue,5);S(L,kline(1182,335,1638,335,1),blue,5);
+  for(let i=0;i<3;i++)S(L,kline(1150-i*14,140,1146-i*14,560,4),red,5);
+  S(L,bird(1300,250,18),gray,4);S(L,bird(1350,232,12),gray,3);
+  S(L,kline(150,490,156,880,2),brn,8);S(L,kline(170,600,1080,606),brn,6);S(L,kline(1080,606,1078,870),brn,6);S(L,kline(170,866,1082,872),brn,6);
+  F(L,rectP(176,612,1074,862),-.35,16,'#5B7FC4',5);
+  box(L,214,552,486,648,gray,4);
+  S(L,densify([{x:300,y:590},{x:380,y:578},{x:380,y:632},{x:300,y:644},{x:300,y:590}],6),ink,4);S(L,densify([{x:380,y:578},{x:460,y:590},{x:460,y:644},{x:380,y:632}],6),ink,4);
+  for(let i=0;i<3;i++){S(L,kline(312,602+i*12,368,594+i*12,.5),gray,2);S(L,kline(392,594+i*12,448,602+i*12,.5),gray,2)}
+  box(L,560,200,900,420,blue,4);S(L,kline(600,330,860,290,2),SUN,7);S(L,kline(700,315,760,360,1.5),SUN,6);S(L,kline(730,300,736,350,1),ink,3);
+  handText(L,'滑翔机',610,400,34,ink);
+  [[1120,930],[1200,946]].forEach(([x,y])=>S(L,densify([{x,y},{x:x+60,y:y-6},{x:x+74,y:y+10},{x:x+4,y:y+16},{x,y}],6),red,5));
+  for(const y of [900,962,1024])S(L,kline(-20,y,1940,y+4,2),'#B9976E',3);
+  /* more of his room (its own seed, so the strokes above keep their shape): a bookshelf on legs, the desk under the window with a lamp,
+     a cup of crayons and a model glider, a clock, star stickers over the bed, a rug, a branch outside — and a tower of blocks on the floor */
+  seed(401);
+  box(L,1690,250,1880,770,brn,5);for(const y of [380,510,640])S(L,kline(1692,y,1878,y,1),brn,4);S(L,kline(1698,770,1700,842,.5),brn,5);S(L,kline(1872,770,1870,842,.5),brn,5);
+  for(const [y0,y1] of [[262,378],[392,508],[522,638],[652,768]]){let x=1700;while(x<1858){const w=rnd(14,26),h=rnd(.68,1)*(y1-y0-8),c=['#B4553E','#36539A','#F2A766','#5F8050','#9C8FE0','#E79AC1'][Math.floor(R()*6)];
+    if(R()<.86){F(L,rectP(x,y1-h,x+w,y1-2,.05),1.4,5,c,5);box(L,x,y1-h,x+w,y1-2,ink,2)}x+=w+rnd(1,5)}}
+  S(L,kline(1760,250,1758,226,1),grn,4);F(L,ellipsePoly(1758,212,26,17,10,.2),.5,6,grn,5);S(L,kcircle(1758,212,26,1.1),grn,4);box(L,1740,232,1780,252,red,4);
+  S(L,kline(1176,650,1670,654,1.5),brn,6);S(L,kline(1200,654,1204,900,1),brn,5);S(L,kline(1646,654,1650,900,1),brn,5);box(L,1440,662,1620,742,brn,4);S(L,kline(1510,702,1550,702,.5),brn,3);
+  S(L,kline(1600,650,1600,566,1),ink,4);S(L,kline(1600,566,1566,528,1),ink,4);{const sh=polyP([[1528,524],[1596,500],[1590,560]],.05);F(L,sh,.4,5,SUN,6);S(L,densify(sh,5,true),ink,3)}
+  S(L,kline(1262,612,1424,598,1),SUN,6);S(L,kline(1322,618,1374,630,1),SUN,5);S(L,kline(1342,606,1346,648,1),ink,3);
+  box(L,1212,600,1244,648,blue,3);for(let k=0;k<4;k++)S(L,kline(1216+k*7,600,1212+k*9,572-k*3,.5),['#B4553E','#F2A766','#5F8050','#36539A'][k],4);
+  S(L,kcircle(1030,176,38,1.2),ink,4);S(L,kline(1030,176,1030,150,.5),ink,4);S(L,kline(1030,176,1050,184,.5),ink,4);
+  [[170,330],[260,280],[350,340],[440,295],[505,352]].forEach(([x,y])=>S(L,kstar(x,y,14),SUN_D,4));
+  {const rug=ellipsePoly(640,968,300,66,16,.15);F(L,rug,.25,11,'#E79AC1',6);S(L,kellipse(640,968,300,66),red,4);for(let k=0;k<12;k++)S(L,kline(360+k*52,1036,358+k*52,1050,.5),red,3)}
+  {const bc=['#B4553E','#F2A766','#36539A','#5F8050','#E79AC1'];let by=1062;for(let k=0;k<5;k++){const w=rnd(54,70),h=rnd(38,46),x0=1462+rnd(-8,8);F(L,rectP(x0,by-h,x0+w,by,.05),.7+k,6,bc[k],6);box(L,x0,by-h,x0+w,by,ink,3);by-=h}}
+  S(L,kline(1640,230,1470,290,2),brn,6);F(L,ellipsePoly(1500,250,74,40,12,.4),.5,8,grn,5);S(L,kcircle(1500,250,60,1.15),grn,4);
+  BGS.room={base:room,items:L};await nf();
+  /* the town street, early evening */
+  seed(302);L=[];
+  const street=await paintBase([
+    [bandPoly(-320,540,10,.6),'#CADDF2',{layers:22,alpha:.035}],
+    [bandPoly(280,640,10,.6),'#F8E3CE',{layers:18,alpha:.026}],
+    [bandPoly(500,720,10,.35),'#C9D7BF',{layers:20,alpha:.04,amt:.35}],
+    [bandPoly(640,1240,10,.3),'#C2D5A8',{layers:24,alpha:.045,amt:.3}],
+    [polyP([[930,610],[990,610],[1120,1090],[800,1090]]),'#E4DACB',{layers:22,alpha:.05,amt:.12}],
+  ]);
+  [[150,red],[430,blue],[1250,red],[1540,blue]].forEach(([x,c])=>{box(L,x,470,x+220,620,blue,5);S(L,kline(x-16,474,x+110,390),c,6);S(L,kline(x+110,390,x+236,474),c,6);F(L,rectP(x+30,510,x+80,560),.6,7,yel,5);box(L,x+30,510,x+80,560,blue,3);S(L,kline(x+140,620,x+140,560),blue,4);S(L,kline(x+140,560,x+182,560),blue,4);S(L,kline(x+182,560,x+182,620),blue,4)});
+  S(L,kline(-20,622,1940,618,3),grn,5);
+  for(let i=0;i<26;i++){const u=i/26,y=630+u*u*450,w=30+u*130;S(L,kcircle(960+(i%2?1:-1)*rnd(0,w*.6),y,6+u*16,1.05),gray,3)}
+  S(L,kline(1180,640,1176,330,1.5),ink,5);S(L,kcircle(1178,320,14,1.3),amber,5);
+  for(let x=-10;x<1940;x+=rnd(40,80)){const y=rnd(700,1060);if(Math.abs(x-960)<180)continue;S(L,[{x,y},{x:x+5,y:y-14},{x:x+10,y},{x:x+15,y:y-11},{x:x+20,y}],grn,4)}
+  S(L,bird(700,180,20),gray,4);S(L,bird(760,160,13),gray,3);
+  /* more of the street: far hills, trees between the houses, picket fences, chimney smoke, wires with birds sitting on them, a cat on a fence, flowers, evening clouds */
+  seed(402);
+  S(L,resample(catmull([[-20,474],[300,436],[640,458],[980,424],[1300,452],[1640,428],[1940,452]].map(([x,y])=>({x,y})),10),6),'#7E9E8A',4);
+  for(const [tx,r] of [[60,70],[800,56],[1110,52],[1880,64]]){S(L,kline(tx,622,tx+2,622-r*1.2,1.5),brn,6);F(L,ellipsePoly(tx,622-r*1.9,r,r*.9,10,0),.4,8,grn,6);S(L,kcircle(tx,622-r*1.9,r+3,1.2),grn,5)}
+  for(const [a,b] of [[130,680],[1230,1790]]){S(L,kline(a,604,b,606,1),'#F7F3EA',5);for(let x=a;x<=b;x+=22)S(L,kline(x,636,x+1,592,.5),'#F7F3EA',5)}
+  for(const hx of [150,1540]){box(L,hx+150,404,hx+174,446,red,4);S(L,resample(catmull([[hx+162,398],[hx+150,368],[hx+176,340],[hx+158,310],[hx+182,282]].map(([x,y])=>({x,y})),8),5),'#C9C3D2',4)}
+  S(L,kline(110,640,114,236,1.5),brn,6);S(L,kline(1810,640,1806,236,1.5),brn,6);S(L,kline(90,250,138,250,.5),brn,4);S(L,kline(1786,250,1834,250,.5),brn,4);
+  for(const o of [0,24]){const w=[];for(let i=0;i<=40;i++){const x=114+(1806-114)*i/40;w.push({x,y:250+o+96*(1-Math.pow((x-960)/846,2))})}S(L,w,'#4A4A55',2.5)}
+  for(const bx of [520,560,1340]){const y=250+96*(1-Math.pow((bx-960)/846,2))-8;S(L,kcircle(bx,y,7,1.2),'#4A4A55',4);S(L,kcircle(bx+8,y-6,4,1.2),'#4A4A55',3)}
+  {const cx=1330,cy=578;F(L,ellipsePoly(cx,cy,20,12,8,.1),.3,4,'#3A3740',6);S(L,kcircle(cx+20,cy-12,9,1.2),'#3A3740',5);S(L,[{x:cx+14,y:cy-18},{x:cx+16,y:cy-30},{x:cx+22,y:cy-20}],'#3A3740',4);S(L,[{x:cx+22,y:cy-20},{x:cx+28,y:cy-31},{x:cx+30,y:cy-17}],'#3A3740',4);S(L,resample(catmull([[cx-18,cy+4],[cx-34,cy+20],[cx-30,cy+42]].map(([x,y])=>({x,y})),8),4),'#3A3740',4)} // a cat on the fence
+  for(let i=0;i<40;i++){const x=rnd(140,1790),y=rnd(612,690);if(x>680&&x<1230)continue;S(L,kcircle(x,y,rnd(3,6),1.1),['#E79AC1','#F6E27A','#FBF8F0','#B4553E'][i%4],3)}
+  S(L,arcP(380,190,150,42,Math.PI*1.05,Math.PI*1.95,14),'#F2A766',4,{grp:'dusk'});S(L,arcP(470,180,90,40,Math.PI*1.1,Math.PI*1.9,10),'#F2A766',4,{grp:'dusk'});S(L,arcP(1520,150,130,36,Math.PI*1.05,Math.PI*1.95,14),'#E9A9C0',4,{grp:'dusk'}); // evening cloud edges: the street by day only
+  BGS.street={base:street,items:L};await nf();
+  /* November slope at sunset, the glider tipped onto one wing */
+  seed(303);L=[];
+  const slope=await paintBase([
+    [bandPoly(-320,240,10,.6),'#E9C8D0',{layers:14,alpha:.024}],
+    [bandPoly(-320,540,10,.6),'#F8D3B8',{layers:18,alpha:.03}],
+    [bandPoly(320,760,10,.6),'#FBE0C4',{layers:16,alpha:.028}],
+    [ellipsePoly(620,330,190,62,12,.6),'#FCE6CA',{layers:16,alpha:.06,amt:.3}],
+    [ellipsePoly(1020,250,160,52,12,.6),'#FCE6CA',{layers:16,alpha:.06,amt:.3}],
+    [ellipsePoly(1460,520,112,108,14,.5),'#F4A66C',{layers:28,alpha:.05,amt:.3}],
+    [polyP([[-320,1240],[-320,1000],[1500,690],[2240,760],[2240,1240]],.3),'#E6D7A8',{layers:20,alpha:.04,amt:.25}],
+    [polyP([[-320,1240],[-320,1080],[1500,800],[2240,860],[2240,1240]],.3),'#D6C391',{layers:14,alpha:.03,amt:.25}],
+  ]);
+  S(L,arcP(620,338,190,52,.1,Math.PI-.1),amber,4);S(L,arcP(1020,258,160,44,.1,Math.PI-.1),amber,4);
+  S(L,kline(-20,1012,1500,694,3),'#9C7A3E',6);S(L,kline(1500,694,1940,760,2),'#9C7A3E',6);
+  for(let i=0;i<40;i++){const x=rnd(-10,1930),y=(x<1500?1012-(x+20)/1520*318:694+(x-1500)/440*66)+rnd(10,300);S(L,kline(x,y,x+rnd(-6,10),y-rnd(16,34),1),'#A88A4E',3)}
+  const gl=polyP([[1010,690],[1210,660],[1250,690],[1060,730]]);F(L,gl,.2,9,SUN,7);S(L,densify(gl,6,true),ink,5);
+  S(L,kline(860,792,1580,610,3),ink,7);S(L,kline(1060,700,1070,760,1),ink,4);S(L,kline(1180,672,1186,738,1),ink,4);S(L,kcircle(1262,688,16,1.2),ink,4);
+  for(let i=0;i<9;i++){S(L,kline(1600+i*36,620,1640+i*36,760,1),gray,2);S(L,kline(1640+i*36,620,1600+i*36,760,1),gray,2)}
+  S(L,kline(1590,620,1930,624,1),gray,3);
+  /* more of November: a bare tree against the sunset, birds going home, gold on the cloud edges, fallen leaves in the dry grass */
+  seed(403);
+  S(L,kline(420,914,428,690,2),'#6E5440',7);[[428,770,350,700],[426,730,492,656],[428,706,402,640],[427,748,522,716],[398,668,372,636],[480,664,502,630],[352,702,330,680]].forEach(([a,b,c,d])=>S(L,kline(a,b,c,d,1.5),'#6E5440',4));
+  for(const [bx,by,s] of [[1170,430,16],[1220,410,11],[1262,438,9],[1310,398,8],[1350,420,7]])S(L,bird(bx,by,s),gray,3);
+  S(L,arcP(300,470,170,40,.15,Math.PI-.15),'#F2B451',4);S(L,arcP(1700,300,150,36,.15,Math.PI-.15),'#F2B451',4);S(L,arcP(860,180,120,30,.15,Math.PI-.15),'#F2B451',3);
+  for(let i=0;i<60;i++){const x=rnd(-10,1500),y=1012-(x+20)/1520*318+rnd(20,330);S(L,kcircle(x,y,rnd(3,6),1.1),['#C8692E','#B4553E','#E0A040'][i%3],3)}
+  BGS.slope={base:slope,items:L};await nf();
+  /* chapter 3: the same room, a rainy season later; the folded book under the cabinet */
+  seed(304);L=[];
+  const room3=await paintBase([
+    [bandPoly(-320,840,10,.5),'#E7E2DC',{layers:20,alpha:.03}],
+    [bandPoly(640,1240,10,.3),'#D9CBB4',{layers:22,alpha:.04,amt:.3}],
+    [rectP(1180,150,1640,520),'#C9D3DE',{layers:18,alpha:.04,amt:.12}],
+    [rectP(180,610,1070,860,.25),'#C3CFE0',{layers:18,alpha:.035,amt:.25}],
+  ]);
+  for(let i=0;i<16;i++){const x=rnd(1200,1620),y=rnd(170,480);S(L,kline(x,y,x-14,y+34,.5),'#7E8DA6',2)}
+  const book=polyP([[1560,846],[1764,824],[1786,908],[1578,934]]);F(L,book,.15,8,'#C3CC8C',7);S(L,densify(book,6,true),ink,4);
+  S(L,kline(1600,862,1720,850,1),'#8E9A5E',3);S(L,kline(1604,880,1690,872,1),'#8E9A5E',3);
+  S(L,densify([{x:1578,y:934},{x:1576,y:902},{x:1608,y:930},{x:1578,y:934}],4),ink,3);
+  for(let i=0;i<22;i++){const x=rnd(1500,1840),y=rnd(780,960);S(L,[{x,y},{x:x+1.5,y:y+1}],'#9A9286',3)}
+  /* a season later: the calendar's days crossed off for a while, and then not; grey cloud in the window */
+  seed(404);
+  box(L,960,330,1090,470,ink,3);F(L,rectP(962,332,1088,360,.05),0,6,'#B4553E',5);for(let r=0;r<4;r++)for(let q=0;q<5;q++){const x=972+q*23,y=374+r*22;S(L,kcircle(x+6,y+6,1.5,1),'#9A9286',2);if(r*5+q<9)S(L,[{x,y},{x:x+12,y:y+12}],ink,2)}
+  S(L,arcP(1300,250,110,34,Math.PI*1.05,Math.PI*1.95,12),'#8E97A8',4);S(L,arcP(1520,300,90,30,Math.PI*1.05,Math.PI*1.95,10),'#8E97A8',4);
+  BGS.room3={base:room3,items:[...BGS.room.items,...L]};await nf();
+  /* chapter 4: the dream — a blue too even to be real, clouds with no flaw, birds everywhere, gliders that never look back */
+  seed(305);L=[];
+  const dream=await paintBase([
+    [bandPoly(-320,880,10,.08),'#93B8EC',{layers:10,alpha:.11,amt:.08}],
+    [bandPoly(-320,500,10,.06),'#86ADE8',{layers:8,alpha:.07,amt:.06}],
+    [ellipsePoly(560,330,230,64,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],
+    [ellipsePoly(1380,220,180,52,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],
+    [ellipsePoly(1120,560,260,70,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],
+    [bandPoly(870,1240,10,.02),'#D6D0C4',{layers:10,alpha:.1,amt:.04}],
+    [ellipsePoly(260,180,200,46,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],[ellipsePoly(1700,420,240,58,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],[ellipsePoly(820,700,170,40,18,.05),'#FFFFFF',{layers:5,alpha:.38,amt:.04}],
+  ]);
+  S(L,kline(-20,872,1940,872,.3),'#7A7468',4);
+  /* the flock and the net are groups: they fade in when the text sees them (dreamA). The flock is gliders — 很多滑翔机，像迁徙的鸟群 */
+  const mini=(x,y,s,vx,grp,ax=x)=>{ /* (one anchor for all three strokes, so a glider never comes apart at the screen edge) */const d=Math.sign(vx)||1;S(L,densify([{x:x-26*s,y:y+3*s},{x:x+26*s,y:y-3*s}],4),'#F8F7F2',3.4*s+2,{vx,grp,ax});S(L,densify([{x:x-26*s,y:y+3*s},{x:x+26*s,y:y-3*s}],4),gray,1.6,{vx,grp,ax});S(L,densify([{x:x-4*s*d,y:y-5*s},{x:x+14*s*d,y:y+2*s}],3),gray,2.4,{vx,grp,ax})};
+  for(let i=0;i<46;i++){const s=rnd(.35,1);rnd(7,22);mini(rnd(-20,1940),rnd(60,780),s,rnd(6,16)*(i%5?1:-1),'birds')}
+  for(let i=0;i<6;i++){const x=rnd(0,1900),y=rnd(120,640),s=rnd(.5,1),dir=i%2?1:-1;
+    const wing=[{x:x-90*s,y:y+8*s},{x:x+90*s,y:y-8*s}],body=[{x:x-10*s*dir,y:y-14*s},{x:x+46*s*dir,y:y+6*s}];
+    const vx=dir*rnd(18,34);S(L,densify(wing,6),'#F8F7F2',9*s+3,{vx,ax:x,grp:'gliders'});S(L,densify(wing,6),gray,2,{vx,ax:x,grp:'gliders'});S(L,densify(body,5),gray,4,{vx,ax:x,grp:'gliders'})}
+  seed(405);
+  /* a migrating flock in Vs, and the ground: too flat, too hard, ruled like a floor */
+  for(const [vx0,vy0,n,sp] of [[200,300,9,10],[1100,180,11,12],[700,520,7,9]])for(let k=0;k<n;k++){const side=k%2?1:-1,d=Math.ceil(k/2);rnd(-2,2);mini(vx0-d*46,vy0+side*d*24,.42,sp,'birds',vx0)} // in Vs, like geese
+  for(let k=-9;k<=9;k++)S(L,kline(960+k*14,876,960+k*240,1100,.4),'#B9B2A6',2);
+  for(let n=0;n<8;n++){const y=872+8*Math.pow(1.62,n);S(L,kline(-20,y,1940,y,.4),'#B9B2A6',2)}
+  BGS.dream={base:dream,items:L};await nf();
+  /* chapter 4, waking: the room before dawn */
+  seed(306);
+  const night=await paintBase([
+    [bandPoly(-320,1240,10,.3),'#5F6E9E',{layers:20,alpha:.06,amt:.2}],
+    [rectP(1180,150,1640,520),'#2E3B66',{layers:16,alpha:.07,amt:.1}],
+    [rectP(180,610,1070,860,.25),'#4C5A86',{layers:14,alpha:.04,amt:.25}],
+  ]);
+  L=[];[[1250,210],[1330,300],[1520,190],[1590,420],[1460,260]].forEach(([x,y])=>S(L,kstar(x,y,7),'#F4F1E6',3));
+  seed(406);{const a=arcP(1300,420,34,34,-1.2,1.9,16),b=arcP(1314,412,28,28,1.7,-1.0,14).reverse();S(L,a,'#F4F1E6',4);S(L,b,'#F4F1E6',3)} // a thin moon, before dawn
+  BGS.night={base:night,items:[...BGS.room.items,...L]};await nf();
+  /* branch A: the walk home, lamps coming on one by one, pools of light on the paving */
+  seed(310);L=[];
+  const stn=await paintBase([
+    [bandPoly(-320,700,10,.5),'#34406A',{layers:22,alpha:.08}],
+    [bandPoly(560,1240,10,.3),'#4A5852',{layers:22,alpha:.07,amt:.3}],
+    [polyP([[930,610],[990,610],[1120,1090],[800,1090]]),'#5E5A57',{layers:16,alpha:.06,amt:.12}],
+  ]);
+  {const x=stn.getContext('2d');x.save();x.scale(.5,.5);[[560,960,170],[1180,930,190],[1560,1000,160]].forEach(([lx,ly,r])=>wash(x,ellipsePoly(lx,ly,r,r*.32,14,.3),'#EAD9B6',{layers:12,alpha:.07,amt:.2}));x.restore()}
+  [[560,560],[1560,600]].forEach(([lx,ly])=>{S(L,kline(lx,960,lx-3,ly,1.5),ink,5);S(L,kcircle(lx-2,ly-12,14,1.3),'#F2A766',5)});
+  /* the stars and the moon are a group: they come out when 云已被吹散，群星渐显 (drawNightLife) */
+  seed(410);for(let i=0;i<26;i++){const x=rnd(40,1880),y=rnd(30,360);S(L,[{x:x-3,y},{x:x+3,y}],'#F4F1E6',3,{grp:'stars'})}
+  {const a=arcP(1650,190,40,40,-1.3,1.8,16),b=arcP(1666,180,33,33,1.6,-1.1,14).reverse();S(L,a,'#F4E6B8',4,{grp:'stars'});S(L,b,'#F4E6B8',3,{grp:'stars'})}
+  BGS.streetnight={base:stn,items:[...BGS.street.items,...L]};await nf();
+  /* branch B: lying on the grass under a lamp too bright for stars */
+  seed(311);L=[];
+  const gn=await paintBase([
+    [bandPoly(-320,760,10,.5),'#2F3B63',{layers:24,alpha:.08}],
+    [bandPoly(420,760,10,.5),'#5D5F86',{layers:14,alpha:.05}],
+    [bandPoly(700,1240,10,.3),'#3F5146',{layers:24,alpha:.07,amt:.3}],
+  ]);
+  {const x=gn.getContext('2d');x.save();x.scale(.5,.5); /* a wet, soft halo: many faint layers, the brightest close to the lamp */
+    [[230,.016],[150,.022],[80,.03]].forEach(([r,a])=>wash(x,ellipsePoly(1556,320,r,r*.92,16,.6),'#E9DCC0',{layers:16,alpha:a,amt:.45}));
+    wash(x,ellipsePoly(1560,940,230,56,14,.5),'#E9DCC0',{layers:12,alpha:.025,amt:.35});x.restore()}
+  S(L,kline(1560,940,1556,330,1.5),ink,6);S(L,kcircle(1556,316,18,1.4),'#F2A766',6);
+  [[120,640],[330,628],[560,646],[860,634]].forEach(([hx,hy])=>{box(L,hx,hy-70,hx+150,hy,'#26304F',4);S(L,kline(hx-10,hy-68,hx+75,hy-120),'#26304F',4);S(L,kline(hx+75,hy-120,hx+160,hy-68),'#26304F',4)});
+  for(let gx=-10;gx<1940;gx+=rnd(22,46)){const gy=rnd(760,1070);S(L,[{x:gx,y:gy},{x:gx+5,y:gy-16},{x:gx+10,y:gy},{x:gx+15,y:gy-12},{x:gx+20,y:gy}],'#2C3A30',4)}
+  /* the stars are behind the lamp's glare; what is left: fireflies, tall grass close by, the town's glow low on the sky */
+  seed(411);
+  for(let i=0;i<24;i++){const x=rnd(60,1860),y=rnd(640,1000);S(L,kcircle(x,y,2.5,1.1),'#F6E27A',4)}
+  for(let gx=-20;gx<1960;gx+=rnd(60,120)){const h=rnd(60,140);S(L,[{x:gx,y:1090},{x:gx+10,y:1090-h},{x:gx+18,y:1090},{x:gx+30,y:1090-h*.7},{x:gx+40,y:1090}],'#1F2A22',6)}
+  S(L,resample(catmull([[-20,690],[400,680],[900,700],[1400,684],[1940,696]].map(([x,y])=>({x,y})),10),6),'#6E6A86',3);
+  BGS.grassnight={base:gn,items:L};await nf();
+  await buildAscent();
+  await buildFlight();
+  bgReady=true;
+}
+/* — index_v8.html L2469 — */
+const slopeY=x=>4040-(x+320)*220/2260;
+/* — index_v8.html L2475 — */
+function drawCloudW(ctx,c,camY,ts){let cx=c.x+c.v*ts;cx=((cx+800)%3520+3520)%3520-800;const cy=c.y-camY;if(cy-c.ch>H||cy+c.ch<0)return;ctx.drawImage(c.can,cx-c.cw/2,cy-c.ch/2,c.cw,c.ch)}
+/* — index_v8.html L2496–2526 — */
+/* ---- chapter 2's flight shots ---- */
+/* draw a list of crayon items under one transform (things that move or scale as a whole) */
+function drawItems(cx,items,ox,oy,s,rot,v){
+  cx.save();cx.translate(ox,oy);if(rot)cx.rotate(rot);if(s!==1)cx.scale(s,s);
+  for(const it of items){const r=mulberry32(it.id*7919+v*104729+1);
+    if(it.k==='f'){cx.save();pathPoly(cx,it.clip,0,0);cx.clip();crayon(cx,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17);cx.restore()}
+    else if(it.k==='t')crayonText(cx,it,r,0,0);
+    else crayon(cx,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17)}
+  cx.restore();
+}
+/* one crayon pass: clear the scratch layer, draw, bite it with the paper tooth, lay it on ctx */
+function crayonPass(ctx,draw,op='source-over'){cctx.clearRect(0,0,W,H);draw(cctx);applyTooth(cctx,cpat,0,0);ctx.globalCompositeOperation=op;ctx.drawImage(ccan,0,0);ctx.globalCompositeOperation='source-over'}
+/* the propeller: a grey blur turning beyond the pod (from behind) or across the nose (from above) */
+function propBlur(cx,x,y,s,rot,f,top){cx.save();cx.translate(x,y);if(rot)cx.rotate(rot);cx.scale(s,s);
+  for(let k=0;k<3;k++){const a=f*1.7+k*2.09,pts=top?arcP(0,-104,60,14,a,a+1.1,8):arcP(0,58,92,82,a,a+.8,10);crayon(cx,pts,'#6B6A74',3,mulberry32(f*7+k),0,0,undefined,k*13+f,.75)}cx.restore()}
+/* he is always in frame: the glider from behind, close, in the middle of the picture, trembling while the fan runs
+   (its pod sits behind the dialogue slip; his head and the wing stay above it) */
+const GL_C={x:960,y:640,s:1.7};
+function flightGlider(ctx,v,now,o={}){
+  const i=o.idx??G.idx,ts=now/1000,eng=o.eng??(i>=5&&i<=12),f=Math.floor(ts*12);
+  const x=(o.x??GL_C.x)+(o.dx||0),y=(o.y??GL_C.y)+(o.dy||0),s=o.s??GL_C.s,rot=(o.rot||0)+(eng?Math.sin(ts*9)*.008:Math.sin(ts*.7)*.012);
+  if(o.a!=null&&o.a<=0)return;const a0=ctx.globalAlpha;if(o.a!=null)ctx.globalAlpha=o.a;
+  crayonPass(ctx,c=>{c.save();if(o.sy&&o.sy!==1){c.translate(x,y);c.scale(1,o.sy);c.translate(-x,-y)}
+    if(eng)propBlur(c,x,y,s,rot,f,false);drawItems(c,o.items||FL.rear,x,y,s,rot,v);c.restore();
+    if(o.mark>0){crayon(c,FL.markRing,SUN,6,mulberry32(61+v),0,0,Math.max(2,Math.round(o.mark*FL.markRing.length)),610+v); // his own mark: a ring round himself, and the words
+      const t=FL.mark[0],k=Math.ceil(clamp(o.mark*1.4-.3)*t.chars.length);if(k>0)crayonText(c,{...t,chars:t.chars.slice(0,k)},mulberry32(71+v),0,0)}});
+  ctx.globalAlpha=a0;
+}
+/* chase / low: behind him on the run up the slope, then skimming the grass on the far side */
+/* chapter 5 mirrors it: the same shot behind him, November, and the ground never lets go */
+const NOV='sepia(.62) saturate(.72) hue-rotate(-14deg) brightness(1.02)';
+/* — index_v8.html L2594–2598 — */
+const TW=Array.from({length:72},(_,k)=>({x:hh(k*7+1)*W,y:hh(k*11+2)*H*.8,p:hh(k*13+3)*6.28,s:2.5+hh(k*17+4)*5}));
+function twinkle(ctx,now,skip,am=1){const ts=now/1000;ctx.save();ctx.strokeStyle='#FFFDF4';ctx.lineWidth=1.6;ctx.lineCap='round';
+  for(const q of TW){if(skip&&skip(q))continue;const a=Math.sin(ts*1.6+q.p);if(a<.2)continue;const s=q.s*(.5+.7*a);ctx.globalAlpha=a*.85*am;
+    ctx.beginPath();ctx.moveTo(q.x-s,q.y);ctx.lineTo(q.x+s,q.y);ctx.moveTo(q.x,q.y-s);ctx.lineTo(q.x,q.y+s);ctx.stroke()}
+  ctx.restore()}
+/* — index_v8.html L2736–2745 — */
+const STARL=[];
+function starLayer(v){if(!STARL[v]){const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');drawItems(x,FL.starItems,0,0,1,0,v);toothOn(x,W,H);STARL[v]=c}return STARL[v]}
+/* ---- glow: bright things drawn into a half-size layer, blurred, and added on top (two blurs: a wide haze and a tight core) ---- */
+const glA=document.createElement('canvas');glA.width=960;glA.height=540;const glAx=glA.getContext('2d');
+const glB=document.createElement('canvas');glB.width=960;glB.height=540;const glBx=glB.getContext('2d');
+function glowPass(ctx,draw,blur,alpha){
+  glAx.setTransform(1,0,0,1,0,0);glAx.globalCompositeOperation='source-over';glAx.globalAlpha=1;glAx.clearRect(0,0,960,540);glAx.save();glAx.scale(.5,.5);draw(glAx);glAx.restore();
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  for(const [b,a] of [[blur,alpha],[blur*.3,alpha*.55]]){glBx.clearRect(0,0,960,540);glBx.filter=`blur(${(b/2).toFixed(1)}px)`;glBx.drawImage(glA,0,0);glBx.filter='none';ctx.globalAlpha=a;ctx.drawImage(glB,0,0,W,H)}
+  ctx.restore()}
+/* — index_v8.html L2795–2855 — */
+const E2={x:1040,y:430,r:330},RG={f:1600,D:1.9,ca:Math.cos(.35),sa:Math.sin(.35)};
+/* a point on the orbit (a circle round the earth, seen from a little above it): th = angle, dr/dy = how far off the line */
+function ringPt(th,dr=0,dy=0){const R1=1+dr,x=R1*Math.cos(th),z=R1*Math.sin(th),den=RG.D-z*RG.ca;return{x:E2.x+RG.f*x/den,y:E2.y+RG.f*(z*RG.sa-dy)/den,k:RG.D/den,z}}
+const moonTh=et=>-1.31+.026*et;   // starts just behind the earth's eastern limb; ~1.5° a second
+const hidden=p=>p.z<0&&Math.hypot(p.x-E2.x,p.y-E2.y)<E2.r;
+function drawRingRocks(ctx,v,et,front){
+  for(const r of FL.ringRocks){const p=ringPt(r.th+r.w*.026*et,r.dr,r.dy);if((p.z>=0)!==front)continue;const sz=r.s*34*p.k*p.k;
+    if(p.x<-sz||p.x>W+sz||p.y<-sz||p.y>H+sz)continue;
+    if(sz<3){ctx.fillStyle='rgba(235,235,255,.75)';ctx.fillRect(p.x,p.y,1.6,1.6);continue}
+    ctx.drawImage(FL.rockSpr[r.k][v],p.x-sz/2,p.y-sz/2,sz,sz)}}
+/* earth: the grand view, on the flight clock (o.fc) and the moon's clock (o.et, real seconds since the camera turned); o.dx = slide during the camera turn */
+function drawEarth(ctx,v,now,o={}){
+  const fc=o.fc??(o.still?80:G.fc??80),ts=now/1000,f=Math.floor(ts*12);
+  const et=o.et??(o.still?18:G.et||0);
+  const dsc=eIO(seg(fc,90,97)),zoom=1+.1*dsc,dx=o.dx||0;
+  ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;ctx.fillStyle='#06071A';ctx.fillRect(0,0,W,H);ctx.drawImage(FL.spaceGrand,dx*.6,0,W,H);
+  const col=fc<69?.15:.15+.47*eOut(seg(fc,69.7,72))-.12*seg(fc,72.5,74.5); // 「蓝紫色」: the dark blooms violet and teal, then settles
+  ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=col;ctx.drawImage(FL.bloom,dx*.3,0,W,H);ctx.restore();
+  ctx.save();ctx.translate(dx+E2.x,E2.y);ctx.scale(zoom,zoom);ctx.translate(-E2.x,-E2.y-dsc*30); // the last line: he starts to sink toward it
+  ctx.save();ctx.globalCompositeOperation='lighter';ctx.globalAlpha=.6;ctx.drawImage(FL.milkyGlow,0,0,W,H);ctx.restore(); // the milky way's own light
+  ctx.drawImage(starLayer(v),0,0);
+  const M=ringPt(moonTh(et),0,.04),mr=118*M.k,ms=FL.moon.S*mr/84;
+  /* what is behind the earth goes first, so the earth covers it */
+  drawRingRocks(ctx,v,et,false);
+  if(M.z<0)ctx.drawImage(FL.moon.can,M.x-ms/2,M.y-ms/2,ms,ms);
+  /* the air round the earth, thicker on its lit side (the sun is up to the left) */
+  ctx.save();ctx.globalCompositeOperation='lighter';ctx.globalAlpha=.75;const gs=FL.earthGlow.S;ctx.drawImage(FL.earthGlow.can,E2.x-gs/2-16,E2.y-gs/2-14);ctx.restore();
+  const es=FL.earth.S*E2.r/EARTH.r;ctx.drawImage(FL.earth.can,E2.x-es/2,E2.y-es/2,es,es);
+  ctx.save();ctx.strokeStyle='rgba(228,242,255,.75)';ctx.lineWidth=2.4;ctx.lineCap='round';ctx.beginPath();ctx.arc(E2.x,E2.y,E2.r-1.5,Math.PI*.72,Math.PI*1.64);ctx.stroke();ctx.restore();
+  if(fc>=69){const a0=seg(fc,69.3,70.8); /* 青光: teal, violet, pink ribbons on the rim */
+    crayonPass(ctx,c=>{[['#5FE3D0',0],['#A98BF2',1],['#F09AD0',2]].forEach(([cl,ri])=>{const pts=[];
+      for(let q=0;q<=64;q++){const a=3.3+q/64*2.85,rr=E2.r+24+ri*20+Math.sin(a*6+f*.45+ri*1.7)*11;pts.push({x:E2.x+Math.cos(a)*rr,y:E2.y+Math.sin(a)*rr})}
+      crayon(c,pts,cl,15,mulberry32(ri*31+v),0,0,undefined,ri*7+v,a0*.6)})},'screen')}
+  /* then what is in front of it */
+  drawRingRocks(ctx,v,et,true);
+  if(M.z>=0)ctx.drawImage(FL.moon.can,M.x-ms/2,M.y-ms/2,ms,ms);
+  /* the light: the moon's halo, its comet tail running back along the orbit (hidden where the earth is in front), the near rocks lit */
+  glowPass(ctx,g=>{
+    /* rim light along the earth's lit limb: a wide soft haze and a tight bright edge */
+    g.lineCap='round';g.strokeStyle='rgba(120,175,255,.5)';g.lineWidth=60;g.beginPath();g.arc(E2.x,E2.y,E2.r+12,Math.PI*.55,Math.PI*1.82);g.stroke();
+    g.strokeStyle='rgba(205,232,255,.85)';g.lineWidth=14;g.beginPath();g.arc(E2.x,E2.y,E2.r-3,Math.PI*.64,Math.PI*1.72);g.stroke();
+    const th0=moonTh(et);let prev=null;
+    for(let q=0;q<=90;q++){const th=th0-q*.018,p=ringPt(th,0,.03),a=Math.pow(1-q/90,1.6);
+      if(prev&&!hidden(p)&&!hidden(prev)){g.strokeStyle=`rgba(200,225,255,${(.55*a).toFixed(3)})`;g.lineWidth=(10+60*(1-q/90))*p.k;g.beginPath();g.moveTo(prev.x,prev.y);g.lineTo(p.x,p.y);g.stroke()}prev=p}
+    if(!hidden(M)){const rg=g.createRadialGradient(M.x,M.y,mr*.4,M.x,M.y,mr*3.2);rg.addColorStop(0,'rgba(255,255,250,.42)');rg.addColorStop(.35,'rgba(210,225,255,.18)');rg.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=rg;g.fillRect(M.x-mr*3.3,M.y-mr*3.3,mr*6.6,mr*6.6)}
+    /* the orbit itself as a faint ring of light, brightest near the viewer */
+    prev=null;for(let q=0;q<=160;q++){const p=ringPt(q/160*6.2832,0,0);if(prev&&!hidden(p)&&!hidden(prev)){g.strokeStyle=`rgba(170,190,255,${(.05+.13*Math.max(0,p.z)).toFixed(3)})`;g.lineWidth=40*p.k;g.beginPath();g.moveTo(prev.x,prev.y);g.lineTo(p.x,p.y);g.stroke()}prev=p}
+  },22,.85);
+  ctx.restore();
+  twinkle(ctx,now,q=>Math.hypot(q.x-E2.x,q.y-E2.y)<E2.r+40);
+  /* the foreground: rocks of the near side of the orbit drifting right to left (the same way as the ring), his own rock and the glider's,
+     which ride along with him and so stand still, the glider parked with nobody in it, and him from behind, looking at it all */
+  ctx.save();ctx.translate(dx,0);
+  for(const r of FL.footRocks){const x=((r.x-et*r.sp)%(W+900)+(W+900))%(W+900)-450;ctx.drawImage(FL.bigRock[r.k][v],x-r.s/2,r.y-r.s/2+Math.sin(ts*.4+r.p)*4,r.s,r.s)}
+  /* the glider parked at a slant on its own rock, big and far right (clear of the dialogue strip); him further left */
+  ctx.drawImage(FL.bigRock[0][v],1790-400,1080-400,800,800);
+  crayonPass(ctx,c=>drawItems(c,FL.gliderPark,1730,790,2.2,.3,v));
+  ctx.drawImage(FL.bigRock[1][v],380-300,1205-300,600,600);
+  crayonPass(ctx,c=>drawItems(c,FL.cusBackCap,380,1066,2.3,0,v));
+  ctx.restore();
+}
+/* — index_v8.html L2902–2914 — */
+/* the dream's edges: the frame darkens and breathes, and soft dashed dark lines drift along the borders, like the edge of sleep */
+function drawDreamEdge(ctx,now){const ts=now/1000,br=.85+.15*Math.sin(ts*.6);
+  const g=ctx.createRadialGradient(960,500,380*br,960,520,1160);g.addColorStop(0,'rgba(18,20,40,0)');g.addColorStop(.55,'rgba(18,20,40,.2)');g.addColorStop(1,'rgba(8,10,26,.74)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  /* soft dashed dark lines curling in from the corners and the borders — wavering, never a frame */
+  ctx.save();ctx.filter='blur(2.2px)';ctx.lineCap='round';
+  for(let k=0;k<12;k++){const side=k%4,ph=ts*.3+k*1.7,sw=Math.sin(ph)*26,dep=60+hh(k*5+1)*120;
+    ctx.setLineDash([10+hh(k*3)*30,10+hh(k*7)*22]);ctx.lineDashOffset=-ts*(10+k*2)*(k%2?1:-1);ctx.lineWidth=1.6+hh(k*11)*3.2;ctx.strokeStyle=`rgba(16,18,36,${(.18+hh(k*13)*.22).toFixed(2)})`;ctx.beginPath();
+    if(side===0){const x0=hh(k*17)*700-100;ctx.moveTo(x0,-20);ctx.bezierCurveTo(x0+220,dep+sw,x0+620,dep*.4-sw,x0+980,-20)}
+    else if(side===1){const y0=hh(k*19)*500;ctx.moveTo(-20,y0);ctx.bezierCurveTo(dep+sw,y0+160,dep*.5-sw,y0+420,-20,y0+620)}
+    else if(side===2){const y0=hh(k*23)*500;ctx.moveTo(W+20,y0);ctx.bezierCurveTo(W-dep-sw,y0+180,W-dep*.5+sw,y0+430,W+20,y0+640)}
+    else{const x0=hh(k*29)*900;ctx.moveTo(x0,H+20);ctx.bezierCurveTo(x0+260,H-dep-sw,x0+700,H-dep*.5+sw,x0+1000,H+20)}
+    ctx.stroke()}
+  ctx.restore()}
+/* — index_v8.html L3437–3438 — */
+const MEL=[[0,19],[2,16],[4,14],[6,12],[9,9],[12,12],[14,14],[16,16],[18,14],[20,12],[22,9],[25,7],[28,9],[30,12],[32,19],[34,16],[36,14],[38,12],[41,14],[44,16],[46,14],[48,12],[51,9],[54,7],[56,4],[60,2],[62,0]];
+const BASS=[[0,-12],[16,-15],[32,-17],[48,-12]];
+/* — index_v8.html L3457–3458 — */
+const NOTE=s=>{const m=/^([A-G])(#|b)?(-?\d)$/.exec(s);return 12*(+m[3]+1)+{C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1]]+(m[2]==='#'?1:m[2]==='b'?-1:0)};
+const HZ=n=>440*Math.pow(2,(n-69)/12);
+/* — index_v8.html L3508–3510 — */
+function wavOf(buf){const n=buf.length,ch=buf.numberOfChannels,sr=buf.sampleRate,b=new ArrayBuffer(44+n*ch*2),v=new DataView(b),w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF');v.setUint32(4,36+n*ch*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,ch,true);v.setUint32(24,sr,true);v.setUint32(28,sr*ch*2,true);v.setUint16(32,ch*2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*ch*2,true);
+  const d=[...Array(ch)].map((_,c)=>buf.getChannelData(c));let o=44;for(let i=0;i<n;i++)for(let c=0;c<ch;c++){v.setInt16(o,Math.max(-1,Math.min(1,d[c][i]))*32767,true);o+=2}return new Blob([b],{type:'audio/wav'})}
+/* — index_v8.html L4041 — */
+function toothOn(x,w,h){x.save();x.globalCompositeOperation='destination-in';x.fillStyle=x.createPattern(toothC,'repeat');x.fillRect(0,0,w,h);x.restore()}
+/* ======================= /LIB ======================= */
+const SCR=new Map();
+crayonPass=function(ctx,draw,op='source-over'){const w=ctx.canvas.width,h=ctx.canvas.height,k=w+'x'+h;let s=SCR.get(k);
+  if(!s){const can=document.createElement('canvas');can.width=w;can.height=h;const x=can.getContext('2d');s={can,x,pat:x.createPattern(toothC,'repeat')};SCR.set(k,s)}
+  const x=s.x;x.setTransform(1,0,0,1,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.clearRect(0,0,w,h);x.setTransform(ctx.getTransform());draw(x);
+  x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='destination-in';x.fillStyle=s.pat;x.fillRect(0,0,w,h);x.globalCompositeOperation='source-over';
+  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.globalCompositeOperation=op;ctx.drawImage(s.can,0,0);ctx.restore()};
+const CN='"Noto Sans SC","Microsoft YaHei",sans-serif',UI='Inter,"Noto Sans SC",sans-serif',DISP='"Inter Tight",Inter,"Noto Sans SC",sans-serif';
+let dotItems=[];
+
+/* ---------- type and marks ---------- */
+function text(c,s,x,y,font,color,o={}){c.save();c.font=font;c.fillStyle=color;c.globalAlpha*=o.a??1;c.letterSpacing=(o.ls||0)+'px';c.textAlign=o.align||'left';c.textBaseline='alphabetic';c.fillText(s,x,y);const w=c.measureText(s).width;c.restore();return w}
+const cap=(c,s,x,y,color,o={})=>text(c,s.toUpperCase(),x,y,`${o.w||500} ${o.size||13}px ${UI}`,color,{ls:(o.size||13)*.1,...o});
+function hair(c,x,y,w,h,col,a=1){c.save();c.globalAlpha*=a;c.fillStyle=col;c.fillRect(x,y,w,h);c.restore()}
+function grid(c,Wd,Hd,m,cols,col,a){c.save();c.globalAlpha=a;c.fillStyle=col;const g=24,cw=(Wd-2*m-(cols-1)*g)/cols;for(let i=0;i<cols;i++){const x=m+i*(cw+g);c.fillRect(Math.round(x),0,1,Hd);c.fillRect(Math.round(x+cw),0,1,Hd)}c.restore();return cw}
+function reg(c,x,y,col){c.save();c.lineWidth=1.4;for(const [cl,dx,dy] of [[col,0,0],[SUN,-3,2]]){c.strokeStyle=cl;c.beginPath();c.arc(x+dx,y+dy,11,0,6.2832);c.moveTo(x+dx-22,y+dy);c.lineTo(x+dx+22,y+dy);c.moveTo(x+dx,y+dy-22);c.lineTo(x+dx,y+dy+22);c.stroke()}c.restore()}
+function vtext(c,s,x,y,col,a=.55,size=11){c.save();c.translate(x,y);c.rotate(Math.PI/2);cap(c,s,0,0,col,{a,size});c.restore()}
+function dataBlock(c,x,y,rows,col,a=.7,w=260){rows.forEach(([k,v],i)=>{const yy=y+i*20;cap(c,k,x,yy,col,{a,size:11});cap(c,v,x+w,yy,col,{a,size:11,align:'right'});c.save();c.globalAlpha=a*.3;c.fillStyle=col;
+  for(let lx=x+80;lx<x+w-90;lx+=4)c.fillRect(lx,yy-4,1,1);c.restore()})}
+function bigOutline(c,s,x,y,size,col,a=.18,align='left'){c.save();c.globalAlpha*=a;c.font=`600 ${size}px ${DISP}`;c.letterSpacing=(-size*.04)+'px';c.textAlign=align;c.strokeStyle=col;c.lineWidth=1.4;c.strokeText(s,x,y);c.restore()}
+function cross(c,x,y,r,col,a=.6){c.save();c.globalAlpha*=a;c.strokeStyle=col;c.lineWidth=1.2;c.beginPath();c.moveTo(x-r,y);c.lineTo(x+r,y);c.moveTo(x,y-r);c.lineTo(x,y+r);c.stroke();c.beginPath();c.arc(x,y,r*.45,0,6.2832);c.stroke();c.restore()}
+function stars(c,x,y,w,h,n,col,a,sd){c.save();c.strokeStyle=col;c.lineWidth=1.6;for(let k=0;k<n;k++){const px=x+hh(k*31+sd)*w,py=y+hh(k*17+sd*7)*h,s=4+hh(k*5+sd)*10;c.globalAlpha=a*(.35+.65*hh(k*3+sd));
+  c.beginPath();c.moveTo(px-s,py);c.lineTo(px+s,py);c.moveTo(px,py-s);c.lineTo(px,py+s);c.stroke()}c.restore()}
+function gliderTop(c,x,y,s,rot,col,hole){c.save();c.translate(x,y);c.rotate(rot);c.scale(s,s);c.fillStyle=col;
+  c.beginPath();c.roundRect(-300,-14,600,28,14);c.fill();c.beginPath();c.moveTo(-16,-80);c.quadraticCurveTo(0,-140,16,-80);c.lineTo(9,150);c.lineTo(-9,150);c.closePath();c.fill();
+  c.beginPath();c.roundRect(-82,136,164,16,8);c.fill();c.fillStyle=hole;c.beginPath();c.arc(0,-58,10,0,6.2832);c.fill();c.restore()}
+function yards(c,x,y,cell,gap,lit,col,a=1){for(let i=0;i<9;i++){const xx=x+i*(cell+gap);c.save();c.globalAlpha*=a;c.strokeStyle=col;c.fillStyle=col;c.lineWidth=1.3;
+  if(i<lit)c.fillRect(xx,y,cell,cell);else c.strokeRect(xx+.5,y+.5,cell-1,cell-1);c.restore();cap(c,String(9-i).padStart(2,'0'),xx+6,y+16,i<lit?COBALT:col,{a,size:10})}}
+function halftone(c,cx,cy,r,col,a=1,cell=14){c.save();c.globalAlpha*=a;c.fillStyle=col;for(let yy=-r;yy<=r;yy+=cell)for(let xx=-r;xx<=r;xx+=cell){const d=Math.hypot(xx,yy)/r;if(d>1)continue;c.beginPath();c.arc(cx+xx,cy+yy,cell*.48*(1-d*.85),0,6.2832);c.fill()}c.restore()}
+/* the seal: AI note as a stamp */
+const SEAL_RING='AI-ASSISTED · 约 60% · STORY & TEXT BY THE AUTHOR · 故事与文本由作者完成 · ENDND × CLAUDE · ';
+function seal(c,cx,cy,R,col,rot=-.3,bg=null){const k=R/230;c.save();c.translate(cx,cy);if(bg){c.fillStyle=bg;c.beginPath();c.arc(0,0,R+6*k,0,6.2832);c.fill()}c.strokeStyle=col;c.fillStyle=col;
+  c.lineWidth=3*k;c.beginPath();c.arc(0,0,R,0,6.2832);c.stroke();c.lineWidth=1.2*k;c.beginPath();c.arc(0,0,R*.66,0,6.2832);c.stroke();
+  for(let i=0;i<96;i++){const a=i/96*6.2832,l=i%8?6:14;c.beginPath();c.moveTo(Math.cos(a)*(R-6*k),Math.sin(a)*(R-6*k));c.lineTo(Math.cos(a)*(R-(6+l)*k),Math.sin(a)*(R-(6+l)*k));c.lineWidth=k;c.stroke()}
+  c.save();c.rotate(rot);c.font=`600 ${13*k}px ${UI}`;const chars=[...SEAL_RING],ws=chars.map(ch=>c.measureText(ch).width),tot=ws.reduce((a,b)=>a+b,0),r=R*.82,gap=(2*Math.PI*r-tot)/chars.length;let acc=0;
+  chars.forEach((ch,i)=>{const ang=(acc+ws[i]/2)/r;c.save();c.rotate(ang);c.translate(0,-r);c.textAlign='center';c.fillText(ch,0,13*k*.35);c.restore();acc+=ws[i]+gap});c.restore();
+  text(c,'AI 辅助制作',0,-58*k,`700 ${24*k}px ${CN}`,col,{align:'center',ls:4*k});text(c,'60',-8*k,62*k,`600 ${150*k}px ${DISP}`,col,{align:'center',ls:-6*k});text(c,'%',72*k,40*k,`600 ${48*k}px ${DISP}`,col);
+  cap(c,'Approx. · 约',0,100*k,col,{align:'center',size:12*k});c.restore()}
+/* 飞: the three strokes, the lower third screened into bars that thin out */
+const GLYPH=new Path2D('M40 80H705V220H40Z M555 80H705V470C705 640 760 760 850 790L930 615L985 600L995 880C995 930 960 955 900 955C720 955 555 820 555 520Z M937 117L1013 223L688 453L612 347Z');
+const DOTU=[[700,415],[990,520],[940,610],[700,500]],DOTC={x:832.5,y:511.25},DOTP=DOTU.map(([x,y])=>({x:x-DOTC.x,y:y-DOTC.y}));
+function glyph(c,ox,oy,k,col,screen=true){c.save();c.translate(ox,oy);c.scale(k,k);if(screen){c.beginPath();c.rect(-2000,-300,5000,920);for(let y=620,i=0;y<1000;y+=22,i++)c.rect(-2000,y,5000,22*(1-i/18*.82));c.clip()}c.fillStyle=col;c.fill(GLYPH);c.restore()}
+function yDot(c,x,y,s,v=0){const fi=dotItems[0],li=dotItems[1];crayonPass(c,g=>{g.save();g.translate(x,y);g.scale(s,s);g.save();pathPoly(g,fi.clip,0,0);g.clip();
+  crayon(g,fi.pts,SUN,fi.w,mulberry32(fi.id*7919+v*104729+1),0,0,fi.pts.length,fi.id*131+v*17);g.restore();crayon(g,li.pts,SUN_D,li.w,mulberry32(li.id*7919+v*104729+1),0,0,li.pts.length,li.id*131+v*17);g.restore()})}
+function yline(c,pts,w=11){crayonPass(c,g=>crayon(g,pts,SUN,w,mulberry32(555),0,0,pts.length,7000))}
+/* the earth, as he painted it, with its orbit drawn round it in paper */
+function earth(c,cx,cy,r,col,o={rx:2.25,th:-2.55}){c.save();c.globalCompositeOperation='screen';c.globalAlpha=.9;const gs=FL.earthGlow.S*r/E2.r;c.drawImage(FL.earthGlow.can,cx-gs/2,cy-gs/2,gs,gs);c.restore();
+  const es=FL.earth.S*r/EARTH.r;c.drawImage(FL.earth.can,cx-es/2,cy-es/2,es,es);
+  c.save();c.strokeStyle=col;c.lineWidth=1.4;c.setLineDash([3,7]);c.beginPath();c.ellipse(cx,cy,o.rx*r,r*.62,-.22,0,6.2832);c.stroke();c.setLineDash([]);
+  const th=o.th,mx=cx+Math.cos(th)*r*o.rx*Math.cos(-.22)-Math.sin(th)*r*.62*Math.sin(-.22),my=cy+Math.cos(th)*r*o.rx*Math.sin(-.22)+Math.sin(th)*r*.62*Math.cos(-.22);
+  c.fillStyle=col;c.beginPath();c.arc(mx,my,r*.16,0,6.2832);c.fill();c.lineWidth=1;c.beginPath();c.moveTo(cx,cy);c.lineTo(mx,my);c.stroke();c.restore();
+  cap(c,'地球 · Earth',cx+r*.75,cy+r+30,col,{size:12});cap(c,'月球 · Moon',mx+(mx>cx?14:-10),my-r*.22-10,col,{size:12,align:mx>cx?'left':'right'});cap(c,'384 400 km',(cx+mx)/2+8,(cy+my)/2-10,col,{size:12})}
+function grain(c){const w=c.canvas.width,h=c.canvas.height;c.save();c.globalCompositeOperation='multiply';c.globalAlpha=.45;for(let y=0;y<h;y+=1080)for(let x=0;x<w;x+=1920)c.drawImage(grainC,x,y);c.restore()}
+const grainC=document.createElement('canvas');grainC.width=1920;grainC.height=1080;
+/* the badge: 试玩招募中 on a yellow slab */
+function badge(c,x,y,w,h,size){c.save();c.fillStyle=SUN;c.beginPath();c.moveTo(x,y);c.lineTo(x+w-28,y);c.lineTo(x+w,y+28);c.lineTo(x+w,y+h);c.lineTo(x,y+h);c.closePath();c.fill();c.restore();
+  const tw=text(c,'试玩招募中',x+30,y+h/2+size*.36,`900 ${size}px ${CN}`,COBALT,{ls:size*.06});
+  cap(c,'Playtest',x+w-30,y+h/2-6,COBALT,{align:'right',size:14,w:600});cap(c,'Open now →',x+w-30,y+h/2+16,COBALT,{align:'right',size:14,w:600})}
+function quoteLine(c,s,x,y,size,col){const w=text(c,'「'+s+'」',x-size*.9,y,`700 ${size}px ${CN}`,col,{ls:size*.03});hair(c,x,y+size*.24,w-size*1.8,3,col)}
+
+/* ============ 16:9 ============ */
+function cover169(c){const Wd=1920,Hd=1080,B=1056,v=0;
+  c.fillStyle=PAPER;c.fillRect(0,0,Wd,Hd);c.fillStyle=COBALT;c.fillRect(0,0,B,Hd);
+  grid(c,Wd,Hd,96,12,PAPER,.0);grid(c,Wd,Hd,96,12,COBALT,.1);
+  c.save();c.beginPath();c.rect(0,0,B,Hd);c.clip();grid(c,Wd,Hd,96,12,PAPER,.13);stars(c,40,40,B-80,Hd-80,46,PAPER,.75,7);c.restore();
+  /* the glyph: paper on the cobalt, cobalt where it crosses onto the paper */
+  const k=1.06,ox=-12,oy=-36;
+  c.save();c.beginPath();c.rect(0,0,B,Hd);c.clip();glyph(c,ox,oy,k,PAPER);c.restore();
+  c.save();c.beginPath();c.rect(B,0,Wd-B,Hd);c.clip();glyph(c,ox,oy,k,COBALT);c.restore();
+  earth(c,300,650,168,PAPER,{rx:1.6,th:-1.05});
+  gliderTop(c,880,250,.2,.55,PAPER,COBALT);
+  const dx=ox+DOTC.x*k,dy=oy+DOTC.y*k;
+  yline(c,resample(catmull([[-40,1120],[150,1010],[420,960],[640,860],[780,720],[dx-40,dy+40]].map(([x,y])=>({x,y})),24),5),12);
+  yDot(c,dx,dy,k*1.08,v);
+  yards(c,96,1000-70,46,14,6,PAPER,.9);
+  vtext(c,'飞 / Fly — 先行 PV — First Look — Dream Notes Vol. 01 — 2026',40,120,PAPER,.6);
+  cap(c,'N°00 — 飞 / Fly',96,64,PAPER,{a:.85});
+  /* the paper side */
+  const x=1128,R=1848;
+  cap(c,'飞 / Fly — 一部视觉小说',x,72,COBALT,{w:600});cap(c,'先行 PV · First Look',R,72,COBALT,{align:'right',w:600});hair(c,x,88,R-x,2,COBALT);
+  text(c,'Fly',x-12,330,`700 300px ${DISP}`,COBALT,{ls:-14});
+  bigOutline(c,'PV',R,330,190,COBALT,.22,'right');
+  text(c,'一部视觉小说',x,420,`900 66px ${CN}`,COBALT,{ls:6});cap(c,'A Visual Novel · 5 Chapters · 2 Endings',x,458,COBALT,{w:600,size:14});
+  quoteLine(c,TAGLINE,x+34,548,40,COBALT);
+  badge(c,x,600,R-x,130,82);
+  text(c,'Windows / Android',x,812,`600 46px ${DISP}`,COBALT,{ls:.5});
+  dataBlock(c,x+480,784,[['Chapters','05'],['Endings','02'],['Ver.','0.1 · playtest']],COBALT,.75,240);
+  hair(c,x,846,R-x,1,COBALT,.5);
+  cap(c,'Endnd × Claude Opus 5.5 · 2026',R,874,COBALT,{a:.7,size:12,align:'right'});
+  seal(c,B,880,104,COBALT,-.4,PAPER);
+  reg(c,60,40,PAPER);reg(c,1860,40,COBALT);
+  grain(c)}
+
+/* ============ 4:3 ============ */
+function cover43(c){const Wd=1600,Hd=1200,Bh=720,v=1;
+  c.fillStyle=PAPER;c.fillRect(0,0,Wd,Hd);c.fillStyle=COBALT;c.fillRect(0,0,Wd,Bh);
+  grid(c,Wd,Hd,80,12,COBALT,.1);c.save();c.beginPath();c.rect(0,0,Wd,Bh);c.clip();grid(c,Wd,Hd,80,12,PAPER,.13);stars(c,40,40,Wd-80,Bh-80,42,PAPER,.75,11);c.restore();
+  const k=.82,ox=64,oy=-46;
+  c.save();c.beginPath();c.rect(0,0,Wd,Bh);c.clip();glyph(c,ox,oy,k,PAPER);c.restore();
+  c.save();c.beginPath();c.rect(0,Bh,Wd,Hd-Bh);c.clip();glyph(c,ox,oy,k,COBALT);c.restore();
+  earth(c,1270,330,150,PAPER);
+  gliderTop(c,1340,610,.17,-.35,PAPER,COBALT);
+  const dx=ox+DOTC.x*k,dy=oy+DOTC.y*k;
+  yline(c,resample(catmull([[-40,560],[110,500],[250,470],[400,440],[dx-30,dy+30]].map(([x,y])=>({x,y})),24),5),11);
+  yDot(c,dx,dy,k*1.1,v);
+  cap(c,'N°00 — 飞 / Fly — 先行 PV · First Look',80,56,PAPER,{a:.85});cap(c,'Dream Notes Vol. 01',Wd-80,56,PAPER,{a:.85,align:'right'});
+  vtext(c,'飞 / Fly — 先行 PV — First Look — 2026',36,110,PAPER,.6);
+  yards(c,80,Bh-64,40,12,6,PAPER,.9);
+  /* the paper side */
+  text(c,'Fly',72,968,`700 270px ${DISP}`,COBALT,{ls:-12});
+  cap(c,'A Visual Novel · 5 Chapters · 2 Endings',80,1016,COBALT,{w:600,size:14});
+  const x=640,R=1520;
+  text(c,'一部视觉小说',x,808,`900 60px ${CN}`,COBALT,{ls:5});
+  quoteLine(c,TAGLINE,x+32,872,34,COBALT);
+  badge(c,x,900,R-x,112,72);
+  text(c,'Windows / Android',x,1050,`600 40px ${DISP}`,COBALT,{ls:.5});
+  cap(c,'Endnd × Claude Opus 5.5 · 2026',R,1046,COBALT,{a:.7,size:12,align:'right'});
+  seal(c,1440,Bh,92,COBALT,-.4,PAPER);
+  reg(c,52,1150,COBALT);reg(c,1548,1150,COBALT);
+  grain(c)}
+
+/* ============ build ============ */
+window.coverReady=(async()=>{
+  const st=document.getElementById('st');
+  const all='飞一部视觉小说试玩招募中先行'+TAGLINE+SEAL_RING+'地球月球约AI辅助制作故事与文本由作者完成「」';
+  await Promise.all([document.fonts.load(`900 80px "Noto Sans SC"`,all),document.fonts.load(`700 40px "Noto Sans SC"`,all),document.fonts.load(`500 13px Inter`,'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789·/—×→.'),
+    document.fonts.load(`600 13px Inter`,'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789·/—→'),document.fonts.load(`700 300px "Inter Tight"`,'Fly'),document.fonts.load(`600 190px "Inter Tight"`,'PV0126%'),document.fonts.load(`600 46px "Inter Tight"`,'Windows / Android')]).catch(()=>{});
+  await document.fonts.ready;
+  st.textContent='绘制中…';await nf();
+  toothC=makeTooth();cpat=cctx.createPattern(toothC,'repeat');
+  {const x=grainC.getContext('2d'),id=x.createImageData(1920,1080),d=id.data,r=mulberry32(3);for(let i=0;i<d.length;i+=4){const n=r(),v=255-n*n*26;d[i]=v;d[i+1]=v-2;d[i+2]=v-6;d[i+3]=255}x.putImageData(id,0,0)}
+  seed(41);F(dotItems,DOTP,.35,13,SUN,14);S(dotItems,densify(DOTP,8,true),SUN_D,12);
+  await buildBGs();
+  cover169(document.getElementById('c169').getContext('2d'));cover43(document.getElementById('c43').getContext('2d'));
+  st.textContent='完成 · 可直接右键另存，或点下载';return true})();
+document.querySelectorAll('button[data-c]').forEach(b=>b.onclick=()=>{document.getElementById(b.dataset.c).toBlob(bl=>{const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=b.dataset.n+'.png';a.click()},'image/png')});
+</script>
+</body></html>

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>飞 Fly · B站封面</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&family=ZCOOL+KuaiLe&display=block">
+<style>
+html,body{margin:0;background:#1b1d24;color:#cfcac0;font:13px/1.6 Inter,"Noto Sans SC",sans-serif}
+main{display:flex;flex-direction:column;align-items:center;gap:28px;padding:28px 16px 48px}
+figure{margin:0;display:flex;flex-direction:column;gap:8px;max-width:100%}
+canvas{max-width:min(100%,1200px);height:auto;display:block;background:#F2ECDF}
+figcaption{display:flex;justify-content:space-between;gap:16px;letter-spacing:.04em}
+button{font:inherit;color:#1b1d24;background:#F2B51F;border:0;padding:4px 12px;cursor:pointer}
+#st{opacity:.7}
+</style></head><body>
+<main>
+  <div id="st">载入中…（字体与地球需要十几秒）</div>
+  <figure><canvas id="c169" width="1920" height="1080"></canvas><figcaption><span>16:9 · 1920 × 1080</span><button data-c="c169" data-n="fly_cover_16x9">下载 PNG</button></figcaption></figure>
+  <figure><canvas id="c43" width="1600" height="1200"></canvas><figcaption><span>4:3 · 1600 × 1200</span><button data-c="c43" data-n="fly_cover_4x3">下载 PNG</button></figcaption></figure>
+</main>
+<script>
+/* 《飞 Fly》B 站封面：16:9 与 4:3。画法与 PV 相同（同一套蜡笔 / 纸纹 / 地球，由 build 脚本拼入 LIB）。
+   B 站会在封面底边叠播放量（左下）和时长（右下），所以底部约 12% 不放关键信息。 */
+'use strict';
+const TAGLINE='你还记得飞起来是什么感觉吗。';
+const G={idx:0};let toothC=null,cpat=null;
+const ccan=document.createElement('canvas');ccan.width=1920;ccan.height=1080;const cctx=ccan.getContext('2d');
+const mcan=document.createElement('canvas');mcan.width=960;mcan.height=540;const mctx=mcan.getContext('2d');
+/* ======================= LIB ======================= */
+/*@@LIB@@*/
+/* ======================= /LIB ======================= */
+const SCR=new Map();
+crayonPass=function(ctx,draw,op='source-over'){const w=ctx.canvas.width,h=ctx.canvas.height,k=w+'x'+h;let s=SCR.get(k);
+  if(!s){const can=document.createElement('canvas');can.width=w;can.height=h;const x=can.getContext('2d');s={can,x,pat:x.createPattern(toothC,'repeat')};SCR.set(k,s)}
+  const x=s.x;x.setTransform(1,0,0,1,0,0);x.globalAlpha=1;x.globalCompositeOperation='source-over';x.clearRect(0,0,w,h);x.setTransform(ctx.getTransform());draw(x);
+  x.setTransform(1,0,0,1,0,0);x.globalCompositeOperation='destination-in';x.fillStyle=s.pat;x.fillRect(0,0,w,h);x.globalCompositeOperation='source-over';
+  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.globalCompositeOperation=op;ctx.drawImage(s.can,0,0);ctx.restore()};
+const CN='"Noto Sans SC","Microsoft YaHei",sans-serif',UI='Inter,"Noto Sans SC",sans-serif',DISP='"Inter Tight",Inter,"Noto Sans SC",sans-serif';
+let dotItems=[];
+
+/* ---------- type and marks ---------- */
+function text(c,s,x,y,font,color,o={}){c.save();c.font=font;c.fillStyle=color;c.globalAlpha*=o.a??1;c.letterSpacing=(o.ls||0)+'px';c.textAlign=o.align||'left';c.textBaseline='alphabetic';c.fillText(s,x,y);const w=c.measureText(s).width;c.restore();return w}
+const cap=(c,s,x,y,color,o={})=>text(c,s.toUpperCase(),x,y,`${o.w||500} ${o.size||13}px ${UI}`,color,{ls:(o.size||13)*.1,...o});
+function hair(c,x,y,w,h,col,a=1){c.save();c.globalAlpha*=a;c.fillStyle=col;c.fillRect(x,y,w,h);c.restore()}
+function grid(c,Wd,Hd,m,cols,col,a){c.save();c.globalAlpha=a;c.fillStyle=col;const g=24,cw=(Wd-2*m-(cols-1)*g)/cols;for(let i=0;i<cols;i++){const x=m+i*(cw+g);c.fillRect(Math.round(x),0,1,Hd);c.fillRect(Math.round(x+cw),0,1,Hd)}c.restore();return cw}
+function reg(c,x,y,col){c.save();c.lineWidth=1.4;for(const [cl,dx,dy] of [[col,0,0],[SUN,-3,2]]){c.strokeStyle=cl;c.beginPath();c.arc(x+dx,y+dy,11,0,6.2832);c.moveTo(x+dx-22,y+dy);c.lineTo(x+dx+22,y+dy);c.moveTo(x+dx,y+dy-22);c.lineTo(x+dx,y+dy+22);c.stroke()}c.restore()}
+function vtext(c,s,x,y,col,a=.55,size=11){c.save();c.translate(x,y);c.rotate(Math.PI/2);cap(c,s,0,0,col,{a,size});c.restore()}
+function dataBlock(c,x,y,rows,col,a=.7,w=260){rows.forEach(([k,v],i)=>{const yy=y+i*20;cap(c,k,x,yy,col,{a,size:11});cap(c,v,x+w,yy,col,{a,size:11,align:'right'});c.save();c.globalAlpha=a*.3;c.fillStyle=col;
+  for(let lx=x+80;lx<x+w-90;lx+=4)c.fillRect(lx,yy-4,1,1);c.restore()})}
+function bigOutline(c,s,x,y,size,col,a=.18,align='left'){c.save();c.globalAlpha*=a;c.font=`600 ${size}px ${DISP}`;c.letterSpacing=(-size*.04)+'px';c.textAlign=align;c.strokeStyle=col;c.lineWidth=1.4;c.strokeText(s,x,y);c.restore()}
+function cross(c,x,y,r,col,a=.6){c.save();c.globalAlpha*=a;c.strokeStyle=col;c.lineWidth=1.2;c.beginPath();c.moveTo(x-r,y);c.lineTo(x+r,y);c.moveTo(x,y-r);c.lineTo(x,y+r);c.stroke();c.beginPath();c.arc(x,y,r*.45,0,6.2832);c.stroke();c.restore()}
+function stars(c,x,y,w,h,n,col,a,sd){c.save();c.strokeStyle=col;c.lineWidth=1.6;for(let k=0;k<n;k++){const px=x+hh(k*31+sd)*w,py=y+hh(k*17+sd*7)*h,s=4+hh(k*5+sd)*10;c.globalAlpha=a*(.35+.65*hh(k*3+sd));
+  c.beginPath();c.moveTo(px-s,py);c.lineTo(px+s,py);c.moveTo(px,py-s);c.lineTo(px,py+s);c.stroke()}c.restore()}
+function gliderTop(c,x,y,s,rot,col,hole){c.save();c.translate(x,y);c.rotate(rot);c.scale(s,s);c.fillStyle=col;
+  c.beginPath();c.roundRect(-300,-14,600,28,14);c.fill();c.beginPath();c.moveTo(-16,-80);c.quadraticCurveTo(0,-140,16,-80);c.lineTo(9,150);c.lineTo(-9,150);c.closePath();c.fill();
+  c.beginPath();c.roundRect(-82,136,164,16,8);c.fill();c.fillStyle=hole;c.beginPath();c.arc(0,-58,10,0,6.2832);c.fill();c.restore()}
+function yards(c,x,y,cell,gap,lit,col,a=1){for(let i=0;i<9;i++){const xx=x+i*(cell+gap);c.save();c.globalAlpha*=a;c.strokeStyle=col;c.fillStyle=col;c.lineWidth=1.3;
+  if(i<lit)c.fillRect(xx,y,cell,cell);else c.strokeRect(xx+.5,y+.5,cell-1,cell-1);c.restore();cap(c,String(9-i).padStart(2,'0'),xx+6,y+16,i<lit?COBALT:col,{a,size:10})}}
+function halftone(c,cx,cy,r,col,a=1,cell=14){c.save();c.globalAlpha*=a;c.fillStyle=col;for(let yy=-r;yy<=r;yy+=cell)for(let xx=-r;xx<=r;xx+=cell){const d=Math.hypot(xx,yy)/r;if(d>1)continue;c.beginPath();c.arc(cx+xx,cy+yy,cell*.48*(1-d*.85),0,6.2832);c.fill()}c.restore()}
+/* the seal: AI note as a stamp */
+const SEAL_RING='AI-ASSISTED · 约 60% · STORY & TEXT BY THE AUTHOR · 故事与文本由作者完成 · ENDND × CLAUDE · ';
+function seal(c,cx,cy,R,col,rot=-.3,bg=null){const k=R/230;c.save();c.translate(cx,cy);if(bg){c.fillStyle=bg;c.beginPath();c.arc(0,0,R+6*k,0,6.2832);c.fill()}c.strokeStyle=col;c.fillStyle=col;
+  c.lineWidth=3*k;c.beginPath();c.arc(0,0,R,0,6.2832);c.stroke();c.lineWidth=1.2*k;c.beginPath();c.arc(0,0,R*.66,0,6.2832);c.stroke();
+  for(let i=0;i<96;i++){const a=i/96*6.2832,l=i%8?6:14;c.beginPath();c.moveTo(Math.cos(a)*(R-6*k),Math.sin(a)*(R-6*k));c.lineTo(Math.cos(a)*(R-(6+l)*k),Math.sin(a)*(R-(6+l)*k));c.lineWidth=k;c.stroke()}
+  c.save();c.rotate(rot);c.font=`600 ${13*k}px ${UI}`;const chars=[...SEAL_RING],ws=chars.map(ch=>c.measureText(ch).width),tot=ws.reduce((a,b)=>a+b,0),r=R*.82,gap=(2*Math.PI*r-tot)/chars.length;let acc=0;
+  chars.forEach((ch,i)=>{const ang=(acc+ws[i]/2)/r;c.save();c.rotate(ang);c.translate(0,-r);c.textAlign='center';c.fillText(ch,0,13*k*.35);c.restore();acc+=ws[i]+gap});c.restore();
+  text(c,'AI 辅助制作',0,-58*k,`700 ${24*k}px ${CN}`,col,{align:'center',ls:4*k});text(c,'60',-8*k,62*k,`600 ${150*k}px ${DISP}`,col,{align:'center',ls:-6*k});text(c,'%',72*k,40*k,`600 ${48*k}px ${DISP}`,col);
+  cap(c,'Approx. · 约',0,100*k,col,{align:'center',size:12*k});c.restore()}
+/* 飞: the three strokes, the lower third screened into bars that thin out */
+const GLYPH=new Path2D('M40 80H705V220H40Z M555 80H705V470C705 640 760 760 850 790L930 615L985 600L995 880C995 930 960 955 900 955C720 955 555 820 555 520Z M937 117L1013 223L688 453L612 347Z');
+const DOTU=[[700,415],[990,520],[940,610],[700,500]],DOTC={x:832.5,y:511.25},DOTP=DOTU.map(([x,y])=>({x:x-DOTC.x,y:y-DOTC.y}));
+function glyph(c,ox,oy,k,col,screen=true){c.save();c.translate(ox,oy);c.scale(k,k);if(screen){c.beginPath();c.rect(-2000,-300,5000,920);for(let y=620,i=0;y<1000;y+=22,i++)c.rect(-2000,y,5000,22*(1-i/18*.82));c.clip()}c.fillStyle=col;c.fill(GLYPH);c.restore()}
+function yDot(c,x,y,s,v=0){const fi=dotItems[0],li=dotItems[1];crayonPass(c,g=>{g.save();g.translate(x,y);g.scale(s,s);g.save();pathPoly(g,fi.clip,0,0);g.clip();
+  crayon(g,fi.pts,SUN,fi.w,mulberry32(fi.id*7919+v*104729+1),0,0,fi.pts.length,fi.id*131+v*17);g.restore();crayon(g,li.pts,SUN_D,li.w,mulberry32(li.id*7919+v*104729+1),0,0,li.pts.length,li.id*131+v*17);g.restore()})}
+function yline(c,pts,w=11){crayonPass(c,g=>crayon(g,pts,SUN,w,mulberry32(555),0,0,pts.length,7000))}
+/* the earth, as he painted it, with its orbit drawn round it in paper */
+function earth(c,cx,cy,r,col,o={rx:2.25,th:-2.55}){c.save();c.globalCompositeOperation='screen';c.globalAlpha=.9;const gs=FL.earthGlow.S*r/E2.r;c.drawImage(FL.earthGlow.can,cx-gs/2,cy-gs/2,gs,gs);c.restore();
+  const es=FL.earth.S*r/EARTH.r;c.drawImage(FL.earth.can,cx-es/2,cy-es/2,es,es);
+  c.save();c.strokeStyle=col;c.lineWidth=1.4;c.setLineDash([3,7]);c.beginPath();c.ellipse(cx,cy,o.rx*r,r*.62,-.22,0,6.2832);c.stroke();c.setLineDash([]);
+  const th=o.th,mx=cx+Math.cos(th)*r*o.rx*Math.cos(-.22)-Math.sin(th)*r*.62*Math.sin(-.22),my=cy+Math.cos(th)*r*o.rx*Math.sin(-.22)+Math.sin(th)*r*.62*Math.cos(-.22);
+  c.fillStyle=col;c.beginPath();c.arc(mx,my,r*.16,0,6.2832);c.fill();c.lineWidth=1;c.beginPath();c.moveTo(cx,cy);c.lineTo(mx,my);c.stroke();c.restore();
+  cap(c,'地球 · Earth',cx+r*.75,cy+r+30,col,{size:12});cap(c,'月球 · Moon',mx+(mx>cx?14:-10),my-r*.22-10,col,{size:12,align:mx>cx?'left':'right'});cap(c,'384 400 km',(cx+mx)/2+8,(cy+my)/2-10,col,{size:12})}
+function grain(c){const w=c.canvas.width,h=c.canvas.height;c.save();c.globalCompositeOperation='multiply';c.globalAlpha=.45;for(let y=0;y<h;y+=1080)for(let x=0;x<w;x+=1920)c.drawImage(grainC,x,y);c.restore()}
+const grainC=document.createElement('canvas');grainC.width=1920;grainC.height=1080;
+/* the badge: 试玩招募中 on a yellow slab */
+function badge(c,x,y,w,h,size){c.save();c.fillStyle=SUN;c.beginPath();c.moveTo(x,y);c.lineTo(x+w-28,y);c.lineTo(x+w,y+28);c.lineTo(x+w,y+h);c.lineTo(x,y+h);c.closePath();c.fill();c.restore();
+  const tw=text(c,'试玩招募中',x+30,y+h/2+size*.36,`900 ${size}px ${CN}`,COBALT,{ls:size*.06});
+  cap(c,'Playtest',x+w-30,y+h/2-6,COBALT,{align:'right',size:14,w:600});cap(c,'Open now →',x+w-30,y+h/2+16,COBALT,{align:'right',size:14,w:600})}
+function quoteLine(c,s,x,y,size,col){const w=text(c,'「'+s+'」',x-size*.9,y,`700 ${size}px ${CN}`,col,{ls:size*.03});hair(c,x,y+size*.24,w-size*1.8,3,col)}
+
+/* ============ 16:9 ============ */
+function cover169(c){const Wd=1920,Hd=1080,B=1056,v=0;
+  c.fillStyle=PAPER;c.fillRect(0,0,Wd,Hd);c.fillStyle=COBALT;c.fillRect(0,0,B,Hd);
+  grid(c,Wd,Hd,96,12,PAPER,.0);grid(c,Wd,Hd,96,12,COBALT,.1);
+  c.save();c.beginPath();c.rect(0,0,B,Hd);c.clip();grid(c,Wd,Hd,96,12,PAPER,.13);stars(c,40,40,B-80,Hd-80,46,PAPER,.75,7);c.restore();
+  /* the glyph: paper on the cobalt, cobalt where it crosses onto the paper */
+  const k=1.06,ox=-12,oy=-36;
+  c.save();c.beginPath();c.rect(0,0,B,Hd);c.clip();glyph(c,ox,oy,k,PAPER);c.restore();
+  c.save();c.beginPath();c.rect(B,0,Wd-B,Hd);c.clip();glyph(c,ox,oy,k,COBALT);c.restore();
+  earth(c,300,650,168,PAPER,{rx:1.6,th:-1.05});
+  gliderTop(c,880,250,.2,.55,PAPER,COBALT);
+  const dx=ox+DOTC.x*k,dy=oy+DOTC.y*k;
+  yline(c,resample(catmull([[-40,1120],[150,1010],[420,960],[640,860],[780,720],[dx-40,dy+40]].map(([x,y])=>({x,y})),24),5),12);
+  yDot(c,dx,dy,k*1.08,v);
+  yards(c,96,1000-70,46,14,6,PAPER,.9);
+  vtext(c,'飞 / Fly — 先行 PV — First Look — Dream Notes Vol. 01 — 2026',40,120,PAPER,.6);
+  cap(c,'N°00 — 飞 / Fly',96,64,PAPER,{a:.85});
+  /* the paper side */
+  const x=1128,R=1848;
+  cap(c,'飞 / Fly — 一部视觉小说',x,72,COBALT,{w:600});cap(c,'先行 PV · First Look',R,72,COBALT,{align:'right',w:600});hair(c,x,88,R-x,2,COBALT);
+  text(c,'Fly',x-12,330,`700 300px ${DISP}`,COBALT,{ls:-14});
+  bigOutline(c,'PV',R,330,190,COBALT,.22,'right');
+  text(c,'一部视觉小说',x,420,`900 66px ${CN}`,COBALT,{ls:6});cap(c,'A Visual Novel · 5 Chapters · 2 Endings',x,458,COBALT,{w:600,size:14});
+  quoteLine(c,TAGLINE,x+34,548,40,COBALT);
+  badge(c,x,600,R-x,130,82);
+  text(c,'Windows / Android',x,812,`600 46px ${DISP}`,COBALT,{ls:.5});
+  dataBlock(c,x+480,784,[['Chapters','05'],['Endings','02'],['Ver.','0.1 · playtest']],COBALT,.75,240);
+  hair(c,x,846,R-x,1,COBALT,.5);
+  cap(c,'Endnd × Claude Opus 5.5 · 2026',R,874,COBALT,{a:.7,size:12,align:'right'});
+  seal(c,B,880,104,COBALT,-.4,PAPER);
+  reg(c,60,40,PAPER);reg(c,1860,40,COBALT);
+  grain(c)}
+
+/* ============ 4:3 ============ */
+function cover43(c){const Wd=1600,Hd=1200,Bh=720,v=1;
+  c.fillStyle=PAPER;c.fillRect(0,0,Wd,Hd);c.fillStyle=COBALT;c.fillRect(0,0,Wd,Bh);
+  grid(c,Wd,Hd,80,12,COBALT,.1);c.save();c.beginPath();c.rect(0,0,Wd,Bh);c.clip();grid(c,Wd,Hd,80,12,PAPER,.13);stars(c,40,40,Wd-80,Bh-80,42,PAPER,.75,11);c.restore();
+  const k=.82,ox=64,oy=-46;
+  c.save();c.beginPath();c.rect(0,0,Wd,Bh);c.clip();glyph(c,ox,oy,k,PAPER);c.restore();
+  c.save();c.beginPath();c.rect(0,Bh,Wd,Hd-Bh);c.clip();glyph(c,ox,oy,k,COBALT);c.restore();
+  earth(c,1270,330,150,PAPER);
+  gliderTop(c,1340,610,.17,-.35,PAPER,COBALT);
+  const dx=ox+DOTC.x*k,dy=oy+DOTC.y*k;
+  yline(c,resample(catmull([[-40,560],[110,500],[250,470],[400,440],[dx-30,dy+30]].map(([x,y])=>({x,y})),24),5),11);
+  yDot(c,dx,dy,k*1.1,v);
+  cap(c,'N°00 — 飞 / Fly — 先行 PV · First Look',80,56,PAPER,{a:.85});cap(c,'Dream Notes Vol. 01',Wd-80,56,PAPER,{a:.85,align:'right'});
+  vtext(c,'飞 / Fly — 先行 PV — First Look — 2026',36,110,PAPER,.6);
+  yards(c,80,Bh-64,40,12,6,PAPER,.9);
+  /* the paper side */
+  text(c,'Fly',72,968,`700 270px ${DISP}`,COBALT,{ls:-12});
+  cap(c,'A Visual Novel · 5 Chapters · 2 Endings',80,1016,COBALT,{w:600,size:14});
+  const x=640,R=1520;
+  text(c,'一部视觉小说',x,808,`900 60px ${CN}`,COBALT,{ls:5});
+  quoteLine(c,TAGLINE,x+32,872,34,COBALT);
+  badge(c,x,900,R-x,112,72);
+  text(c,'Windows / Android',x,1050,`600 40px ${DISP}`,COBALT,{ls:.5});
+  cap(c,'Endnd × Claude Opus 5.5 · 2026',R,1046,COBALT,{a:.7,size:12,align:'right'});
+  seal(c,1440,Bh,92,COBALT,-.4,PAPER);
+  reg(c,52,1150,COBALT);reg(c,1548,1150,COBALT);
+  grain(c)}
+
+/* ============ build ============ */
+window.coverReady=(async()=>{
+  const st=document.getElementById('st');
+  const all='飞一部视觉小说试玩招募中先行'+TAGLINE+SEAL_RING+'地球月球约AI辅助制作故事与文本由作者完成「」';
+  await Promise.all([document.fonts.load(`900 80px "Noto Sans SC"`,all),document.fonts.load(`700 40px "Noto Sans SC"`,all),document.fonts.load(`500 13px Inter`,'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789·/—×→.'),
+    document.fonts.load(`600 13px Inter`,'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789·/—→'),document.fonts.load(`700 300px "Inter Tight"`,'Fly'),document.fonts.load(`600 190px "Inter Tight"`,'PV0126%'),document.fonts.load(`600 46px "Inter Tight"`,'Windows / Android')]).catch(()=>{});
+  await document.fonts.ready;
+  st.textContent='绘制中…';await nf();
+  toothC=makeTooth();cpat=cctx.createPattern(toothC,'repeat');
+  {const x=grainC.getContext('2d'),id=x.createImageData(1920,1080),d=id.data,r=mulberry32(3);for(let i=0;i<d.length;i+=4){const n=r(),v=255-n*n*26;d[i]=v;d[i+1]=v-2;d[i+2]=v-6;d[i+3]=255}x.putImageData(id,0,0)}
+  seed(41);F(dotItems,DOTP,.35,13,SUN,14);S(dotItems,densify(DOTP,8,true),SUN_D,12);
+  await buildBGs();
+  cover169(document.getElementById('c169').getContext('2d'));cover43(document.getElementById('c43').getContext('2d'));
+  st.textContent='完成 · 可直接右键另存，或点下载';return true})();
+document.querySelectorAll('button[data-c]').forEach(b=>b.onclick=()=>{document.getElementById(b.dataset.c).toBlob(bl=>{const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=b.dataset.n+'.png';a.click()},'image/png')});
+</script>
+</body></html>

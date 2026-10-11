@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>飞 Fly · PV 01</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700;900&family=ZCOOL+KuaiLe&display=block">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-regular.css">
+<style>
+/* the stage is one 1920×1080 canvas, scaled to fit the window; nothing else is on screen while it plays */
+html,body{margin:0;height:100%;overflow:hidden;background:#0b0b0d}
+#pv{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;background:#F2ECDF}
+#hud{position:fixed;left:12px;bottom:10px;font:12px/1.6 Inter,"Noto Sans SC",sans-serif;color:#cfcac0;background:rgba(11,11,13,.72);padding:6px 10px;border-radius:2px;letter-spacing:.04em;pointer-events:none;white-space:pre}
+#hud[hidden]{display:none}
+</style></head><body>
+<canvas id="pv" width="1920" height="1080"></canvas>
+<div id="hud">载入中…</div>
+<script>
+/* ============================================================================================
+   《飞 Fly》PV 01 — 约 32.5 秒，1920×1080
+   ▸ 所有画面只由一个时间变量 t（秒）决定：render(t)。没有 setTimeout / CSS 动画 / 未播种的随机数。
+   ▸ window.pv = { duration, seek(t), play(), pause() }；?t=12.5 打开即停在第 12.5 秒。
+   ▸ 打开后等空格开始；结尾停在定版，不循环。
+   ▸ 画风函数（水彩、蜡笔、纸纹、草坡、滑翔机、地球、梦）原样取自 index_v8.html，由 build 脚本拼进来（见下方 LIB 段）。
+   键：空格 播放/暂停 · ← → 前后一帧(1/60s，Shift = 1s) · 0 回到开头 · M 静音 · W 导出音轨 .wav · H 显示/隐藏提示
+   ============================================================================================ */
+'use strict';
+/* ★ 文案都在这里 ★ */
+const DISCLOSURE='本作由 AI 辅助制作（约 60%），详细占比见附图 · 故事与文本由作者完成';
+const TAGLINE='每个人都飞过一次，在梦里。';          // ← 宣传语（PV 作者写的，可替换）
+const CAPS=[ /* 字幕：全部是游戏里的原句 */
+  {t0:3.5, t1:8.1, tab:'第二章 · 最高的地方', s:'风刚好从身后推过来，他就跑了。'},
+  {t0:12.8,t1:16.1,tab:'第二章 · 最高的地方', s:'他忽然想，这大概就是最高的地方。'},
+  {t0:17.9,t1:21.3,tab:'第四章 · 鸟群',       s:'飞翔好像和走路一样简单。'},
+  {t0:21.9,t1:24.7,tab:'第五章 · 十一月',     s:'天边烧成橘红色，云层被镶了一圈金边。'},
+];
+const DUR=32.5;
+
+/* scratch layers the library draws through (declared before it, as in the storyboard) */
+const G={idx:0};
+let toothC=null,cpat=null;
+const ccan=document.createElement('canvas');ccan.width=1920;ccan.height=1080;const cctx=ccan.getContext('2d');
+const mcan=document.createElement('canvas');mcan.width=960;mcan.height=540;const mctx=mcan.getContext('2d');
+
+/* ======================= LIB: verbatim from index_v8.html ======================= */
+/*@@LIB@@*/
+/* ======================= /LIB ======================= */
+
+const X=document.getElementById('pv').getContext('2d');
+const tmp=document.createElement('canvas');tmp.width=W;tmp.height=H;const TX=tmp.getContext('2d');
+const tmp2=document.createElement('canvas');tmp2.width=W;tmp2.height=H;const TX2=tmp2.getContext('2d');
+const grainC=document.createElement('canvas');grainC.width=W;grainC.height=H;
+let ready=false,bleedLayers=[],dotItems=[];
+const LX='"LXGW WenKai","Noto Sans SC",sans-serif',CN='"Noto Sans SC","Microsoft YaHei",sans-serif',UI='Inter,"Noto Sans SC",sans-serif',DISP='"Inter Tight",Inter,"Noto Sans SC",sans-serif';
+
+/* ---------- small drawing helpers ---------- */
+function reset(c){c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;c.globalCompositeOperation='source-over';c.filter='none';c.letterSpacing='0px';c.textAlign='left';c.textBaseline='alphabetic'}
+function text(c,s,x,y,font,color,o={}){if((o.a??1)<=0)return;c.save();c.font=font;c.fillStyle=color;c.globalAlpha*=o.a??1;c.letterSpacing=(o.ls||0)+'px';c.textAlign=o.align||'left';
+  if(o.halo){c.shadowColor=o.halo;c.shadowBlur=8}c.fillText(s,x,y);c.restore()}
+const cap=(c,s,x,y,color,o={})=>text(c,s.toUpperCase(),x,y,`${o.w||400} ${o.size||12}px ${UI}`,color,{ls:(o.size||12)*.09,...o});
+function paper(c){c.fillStyle=PAPER;c.fillRect(0,0,W,H)}
+function gridLines(c,a,prog=1){if(a<=0)return;c.save();c.fillStyle=COBALT;
+  for(let i=1;i<=12;i++)for(const x of [COL(i),COLR(i)]){const k=i-1,p=typeof prog==='function'?prog(k):prog;if(p<=0)continue;c.globalAlpha=a;c.fillRect(x,80,1,920*p)}
+  for(const [y,k] of [[80,0],[1000,1]]){const p=typeof prog==='function'?prog(k*4):prog;c.globalAlpha=a;c.fillRect(0,y,W*p,1)}c.restore()}
+/* registration marks, cobalt and yellow; off = how far the yellow plate has crept */
+function regMarks(c,a,off=0){if(a<=0)return;const pts=[[60,40],[1860,40],[60,1040],[1860,1040]];c.save();c.globalCompositeOperation='multiply';c.lineWidth=1.25;
+  for(const [col,dx,dy] of [[COBALT,off?5:0,off?-3:0],[SUN,off?-2:0,off?1:0]]){c.strokeStyle=col;c.globalAlpha=a;
+    for(const [x0,y0] of pts){const x=x0+dx,y=y0+dy;c.beginPath();c.arc(x,y,10,0,6.2832);c.moveTo(x-20,y);c.lineTo(x+20,y);c.moveTo(x,y-20);c.lineTo(x,y+20);c.stroke()}}
+  c.restore()}
+/* T2: the water stain — p 0→1 spreads from (cx,cy); mode 'in' keeps the inside of target, 'out' cuts it away */
+function bleed(target,p,mode,cx=960,cy=540){
+  mctx.setTransform(1,0,0,1,0,0);mctx.globalCompositeOperation='source-over';mctx.globalAlpha=1;mctx.clearRect(0,0,960,540);
+  mctx.save();mctx.translate(cx/2,cy/2);const rad=lerp(4,1300,eOut(clamp(p)));mctx.scale(rad,rad);mctx.fillStyle='#000';
+  for(const Lp of bleedLayers){mctx.globalAlpha=.11;fillPoly(mctx,Lp)}mctx.restore();
+  target.save();target.setTransform(1,0,0,1,0,0);target.globalAlpha=1;target.globalCompositeOperation=mode==='in'?'destination-in':'destination-out';target.drawImage(mcan,0,0,W,H);target.restore()}
+/* T3: the twelve columns, 30 ms apart; cover = falling from the top, reveal = lifting back up */
+function colStrips(c,ms,cover,color){c.save();c.fillStyle=color;
+  for(let i=1;i<=12;i++){const l=i===1?0:COL(i)-12,r=i===12?W:COLR(i)+12,p=eIO(clamp((ms-(i-1)*30)/450)),h=(cover?p:1-p)*H;if(h>0)c.fillRect(l,0,r-l+1,h)}c.restore()}
+
+/* ============================== the shots ============================== */
+/* A · 0–2.6 s: one quiet line on the proof paper */
+function shotA(c,t){paper(c);gridLines(c,.09);
+  text(c,DISCLOSURE,960,548,`400 26px ${CN}`,COBALT,{a:eOut(seg(t,.15,.7)),ls:1.6,align:'center'});
+  cap(c,'Endnd × Claude Opus 5.5 — 2026.10',120,1044,COBALT,{a:.75*seg(t,.3,.8)})}
+
+/* B · the run: from behind him up the slope, nine yards, and the ground lets go (drawChase, on the PV clock) */
+const B0=2.6,LIFT=3.9;
+const spAt=lt=>lt<LIFT?lerp(.35,3.2,eIn(clamp(lt/LIFT))):3.2+(lt-LIFT)*.9;
+const flDAt=lt=>{let d=0;const n=Math.ceil(Math.max(0,lt)/.01);for(let k=0;k<n;k++)d+=spAt((k+.5)*.01)*.01;return d};
+const yardAt=lt=>clamp(9-Math.floor(seg(lt,.5,LIFT)*9.99),0,9);
+function shotB(c,t,v){const lt=t-B0,ts=t,sp=spAt(lt),flD=flDAt(lt);
+  const pitch=eIn(seg(lt,LIFT-.5,LIFT+2.2))*940,air=seg(lt,LIFT,LIFT+.8),bob=Math.sin(ts*17)*Math.min(5,sp*1.4)*(1-air),vpX=960,y0=575+pitch+bob;
+  c.globalCompositeOperation='source-over';c.globalAlpha=1;
+  c.drawImage(FL.sky,0,Math.max(0,(1080-pitch*.6)/2),960,540,0,0,W,H);
+  for(let k=0;k<2;k++){const cl=BGS.ascent.clouds[k+1],cx=((300+k*900-ts*(14+k*6)-flD*40)%2600+2600)%2600-400,cy=170+k*130+pitch*.5;c.globalAlpha=.9;c.drawImage(cl.can,cx-cl.cw*.3,cy-cl.ch*.3,cl.cw*.6,cl.ch*.6)}
+  c.globalAlpha=1;c.drawImage(FL.ground,0,0,960,540,0,pitch+bob,W,H);
+  crayonPass(c,g=>{
+    drawItems(g,FL.skyItems,0,pitch*.5,1,0,v);drawItems(g,FL.groundItems,0,pitch+bob,1,0,v);
+    for(let k=0;k<58;k++){const u=(hh(k*31+7)-.5)*7,z=(((hh(k*17+3)*11-flD)%11)+11)%11+.7,sx=vpX+u*640/z,sy=y0+430/z;
+      if(sy>H+60||sy<-20||sx<-100||sx>W+100)continue;const h=Math.min(96,72/z),w=h*.9;
+      crayon(g,densify([{x:sx-w*.5,y:sy},{x:sx-w*.3,y:sy-h},{x:sx-w*.1,y:sy},{x:sx+w*.12,y:sy-h*.8},{x:sx+w*.3,y:sy},{x:sx+w*.46,y:sy-h*.6},{x:sx+w*.6,y:sy}],4),'#55764A',Math.max(2.2,7/Math.sqrt(z)),mulberry32(k*7919+v*104729+1),0,0,undefined,k*131+v*17)}
+    if(sp>2.4){g.save();g.globalAlpha=.55*clamp((sp-2.4)/.6);g.strokeStyle='#F4F1E6';g.lineWidth=2.4;g.lineCap='round';
+      for(let k=0;k<12;k++){const a=.12+hh(k*5+1)*(Math.PI-.24),d0=((hh(k*9+2)*900+flD*260)%900)+140,len=60+sp*34;
+        g.beginPath();g.moveTo(vpX+Math.cos(a)*d0,y0+Math.sin(a)*d0*.5);g.lineTo(vpX+Math.cos(a)*(d0+len),y0+Math.sin(a)*(d0+len)*.5);g.stroke()}g.restore()}});
+  const lift=eIn(seg(lt,LIFT-.3,LIFT+1.8))*120+Math.sin(ts*1.3)*6*air;
+  flightGlider(c,v,ts*1000,{eng:true,dy:bob*.6-lift,rot:sp>0?Math.sin(ts*11)*.012*Math.min(1,sp/3)*(1-air)+Math.sin(ts*.9)*.02*air:0});
+  /* the yard counter: nine to none, then it lifts away with him */
+  const ya=seg(lt,.15,.55)*(1-seg(lt,LIFT+.1,LIFT+.7));if(ya>0){const yy=120-eIn(seg(lt,LIFT+.1,LIFT+.7))*60,xx=1540+(1-eOut(seg(lt,.15,.55)))*80;
+    c.save();c.globalAlpha=ya;c.beginPath();c.rect(xx,yy,260,180);c.clip();c.fillStyle=COBALT;c.fillRect(xx,yy,260,180);
+    cap(c,'码 · Yards',xx+14,yy+24,PAPER);cap(c,String(9-yardAt(lt)).padStart(2,'0')+' / 09',xx+246,yy+24,PAPER,{align:'right',a:.75});
+    text(c,String(yardAt(lt)),xx+8,yy+168,`500 170px ${DISP}`,PAPER,{ls:-8});c.restore()}}
+
+/* the altimeter: one decade a step, ground to the moon */
+const ALT_L=['地面 · 0 m','1 km','10 km · 云层','100 km · 卡门线','1 000 km','10 000 km','384 400 km · 月球'];
+const ALT_K=[[6.4,0],[8.0,.3],[8.8,1],[10.0,2],[10.9,3],[11.5,5],[12.0,6]];
+function altP(t){if(t<=ALT_K[0][0])return 0;for(let k=1;k<ALT_K.length;k++){const [t1,p1]=ALT_K[k],[t0,p0]=ALT_K[k-1];if(t<=t1)return lerp(p0,p1,eSine((t-t0)/(t1-t0)))}return 6}
+const altM=p=>p<1?p*1000:p<5?1000*Math.pow(10,p-1):1e7*Math.pow(38.44,p-5);
+const fmtAlt=m=>m<1000?Math.round(m)+' m':Math.round(m/1000).toLocaleString('fr-FR').replace(/ | /g,' ')+' km';
+function altimeter(c,t,dk){const a=seg(t,6.6,7.3)*(1-seg(t,12.4,13.1));if(a<=0)return;const x0=1590+(1-eOut(seg(t,6.6,7.5)))*80,y0=130,col=dk>.5?PAPER:COBALT,halo=dk>.5?'rgba(8,10,28,.9)':'rgba(242,236,223,.9)';
+  c.save();c.globalAlpha=a;c.fillStyle=col;c.fillRect(x0+208,y0,1,640);
+  ALT_L.forEach((l,i)=>{const y=y0+640-i*640/6;c.fillRect(x0+196,y,12,1);text(c,l,x0+190,y+5,`400 11px ${UI}`,col,{ls:.5,align:'right',halo})});
+  for(let i=0;i<=30;i++)c.fillRect(x0+203,y0+640-i*640/30,5,1);
+  const p=altP(t),my=y0+640-p*640/6-12;c.fillStyle=COBALT;c.fillRect(x0+114,my,96,24);text(c,fmtAlt(altM(p)),x0+202,my+16,`500 11px ${UI}`,PAPER,{align:'right'});
+  c.restore()}
+
+/* C1 · into the cloud, through it, and the sky scrolls past: the deeper blue, the violet, the black */
+const C0=8.4;
+function paintWorldPV(c,wd,camY,v,ts){
+  c.globalCompositeOperation='source-over';c.globalAlpha=1;c.drawImage(wd.base,0,Math.max(0,camY/2),960,540,0,0,W,H);
+  for(const cl of wd.clouds)if(!cl.front)drawCloudW(c,cl,camY,ts);
+  crayonPass(c,g=>{for(const it of wd.items){const b=it.bb;if(b.y1-camY<-40||b.y0-camY>H+40)continue;const r=mulberry32(it.id*7919+v*104729+1);
+    if(it.k==='f'){g.save();pathPoly(g,it.clip,0,-camY);g.clip();crayon(g,it.pts,it.color,it.w,r,0,-camY,it.pts.length,it.id*131+v*17);g.restore()}
+    else crayon(g,it.pts,it.color,it.w,r,0,-camY,it.pts.length,it.id*131+v*17)}});
+  for(const cl of wd.clouds)if(cl.front)drawCloudW(c,cl,camY,ts);
+  const ly=150-camY;if(ly>-30&&ly<H){c.fillStyle='rgba(242,236,223,.75)';c.fillRect(120,ly,1680,1);text(c,'地月系的边缘 · 384 400 km',120,ly-10,`500 13px ${CN}`,'rgba(242,236,223,.75)')}}
+function cloudRush(c,v,lt,ts){const cl=BGS.ascent.clouds,vp={x:1220,y:460};
+  c.globalCompositeOperation='source-over';c.globalAlpha=1;c.drawImage(FL.sky,0,Math.max(0,620-lt*60)/2,960,540,0,0,W,H);
+  const list=[];for(let k=0;k<12;k++){const z=1.15+k*.5-lt*1.45;if(z>.3&&z<7)list.push({c:cl[k%cl.length],z,k})}list.sort((a,b)=>b.z-a.z);
+  const one=q=>{const ux=(hh(q.k*13+1)-.5)*1.7,uy=(hh(q.k*29+2)-.5)*.9,s=.75/q.z,x=vp.x+ux*820/q.z,y=vp.y+uy*520/q.z;
+    c.globalAlpha=clamp((q.z-.3)/.4)*clamp((7-q.z)/1.2);c.drawImage(q.c.can,x-q.c.cw*s/2,y-q.c.ch*s/2,q.c.cw*s,q.c.ch*s)};
+  list.filter(q=>q.z>=.95).forEach(one);c.globalAlpha=1;
+  flightGlider(c,v,ts*1000,{eng:true,dy:Math.sin(ts*2.1)*6});
+  list.filter(q=>q.z<.95).forEach(one);c.globalAlpha=1}
+function shotC1(c,t,v){const lt=t-C0,ts=t,clt=.9+lt*1.5,fog=.82*Math.max(0,1-Math.abs(clt-2.7)/1.3);
+  if(lt<1.6)cloudRush(c,v,clt,ts);
+  if(lt>=1.0){const camY=lerp(2400,120,eIO(seg(lt,1.0,3.9))),gone=eIn(seg(lt,2.2,3.15))*760;
+    if(lt<1.6){TX.setTransform(1,0,0,1,0,0);TX.clearRect(0,0,W,H);deep(TX,camY,v,ts,gone);c.globalAlpha=eIO(seg(lt,1.0,1.6));c.drawImage(tmp,0,0);c.globalAlpha=1}
+    else deep(c,camY,v,ts,gone)}
+  if(fog>0){c.globalAlpha=fog;c.fillStyle='#F7F5EF';c.fillRect(0,0,W,H);c.globalAlpha=1}}
+function deep(c,camY,v,ts,gone=0){c.save();c.translate(960,540);c.scale(1.18,1.18);c.translate(-960,-540);paintWorldPV(c,BGS.ascent,camY,v,ts);c.restore();
+  if(camY<600)twinkle(c,ts*1000,null,seg(600-camY,0,400));
+  if(gone<700)flightGlider(c,v,ts*1000,{eng:true,dy:Math.sin(ts*1.6)*8+gone,s:GL_C.s*(1+gone/1400)})}
+
+/* C2 · the grand view: his earth, the moon coming round, the colours shaken loose (翻折。蓝紫色。青光。) — and him on his rock, looking */
+const C2=11.6;
+function shotC2(c,t,v){const lt=t-C2,z=1+.035*eSine(clamp(lt/5.2));
+  c.save();c.translate(1000,560);c.scale(z,z);c.translate(-1000,-560);drawEarth(c,v,t*1000,{fc:68.6+lt*1.25,et:16+lt*2.2});c.restore()}
+
+/* D · the dream: a blue too even to be real, the flock, a stranger who waves and is gone, and him on the hard flat ground, looking up */
+const D0=16.95;
+function shotD(c,t,v){const lt=t-D0,ts=lt+24,bg=BGS.dream,z=1+.03*eSine(clamp(lt/5));
+  c.save();c.translate(960,620);c.scale(z,z);c.translate(-960,-620);
+  c.drawImage(bg.base,0,0,W,H);
+  crayonPass(c,g=>{for(const it of bg.items){if(it.grp)continue;const r=mulberry32(it.id*7919+v*104729+1);
+    if(it.vx){const ax=it.ax!=null?it.ax:it.bb.x0,dx=(((ax+400+it.vx*ts)%2800)+2800)%2800-400-ax;crayon(g,it.pts,it.color,it.w,r,dx,0,it.pts.length,it.id*131+v*17);continue}
+    if(it.k==='f'){g.save();pathPoly(g,it.clip,0,0);g.clip();crayon(g,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17);g.restore()}
+    else crayon(g,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17)}});
+  for(const grp of ['birds','gliders'])crayonPass(c,g=>{for(const it of bg.items){if(it.grp!==grp)continue;const r=mulberry32(it.id*7919+v*104729+1),ax=it.ax!=null?it.ax:it.bb.x0,dx=(((ax+400+it.vx*ts)%2800)+2800)%2800-400-ax;
+    crayon(g,it.pts,it.color,it.w,r,dx,0,it.pts.length,it.id*131+v*17)}});
+  const u=seg(lt,.7,4.7);
+  if(u>0&&u<1){const x=lerp(-620,2540,eIO(u)),y=470-Math.sin(u*Math.PI)*90,s=2.1,wave=1.2+.55*Math.sin(lt*9);c.globalAlpha=clamp(u*7)*clamp((1-u)*7);
+    crayonPass(c,g=>{drawItems(g,FL.gliderPark,x,y,s,-.04,v);const hx=x+14*s,hy=y-32*s,r=mulberry32(91+v),pts=[];
+      for(let q=0;q<=16;q++){const a=q/16*7;pts.push({x:hx+Math.cos(a)*13*s*.55,y:hy+Math.sin(a)*13*s*.55})}crayon(g,pts,'#E6C7A8',10,r,0,0,undefined,7+v);
+      crayon(g,arcP(hx,hy-2*s,8,6,Math.PI,Math.PI*2,8),'#4A3A30',8,r,0,0,undefined,9+v);
+      crayon(g,[{x:hx+8*s,y:hy+10*s},{x:hx+8*s+Math.cos(wave)*24*s,y:hy+10*s-Math.sin(wave)*24*s}],'#3E3A48',6,r,0,0,undefined,11+v)});c.globalAlpha=1}
+  c.save();c.fillStyle='rgba(60,60,84,.16)';c.beginPath();c.ellipse(252,1044,46,9,0,0,6.2832);c.fill();c.restore();
+  crayonPass(c,g=>drawItems(g,FL.cusBack,250,1042,.9,0,v));
+  c.restore();
+  drawDreamEdge(c,t*1000)}
+
+/* E · November: the slope at sunset, the glider tipped onto one wing */
+const E0=21.3;
+function shotE(c,t,v){const lt=t-E0,z=1+.04*eSine(clamp(lt/4)),bg=BGS.slope;
+  c.save();c.translate(1120,640);c.scale(z,z);c.translate(-1120,-640);c.drawImage(bg.base,0,0,W,H);
+  crayonPass(c,g=>{for(const it of bg.items){const r=mulberry32(it.id*7919+v*104729+1);
+    if(it.k==='f'){g.save();pathPoly(g,it.clip,0,0);g.clip();crayon(g,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17);g.restore()}
+    else crayon(g,it.pts,it.color,it.w,r,0,0,it.pts.length,it.id*131+v*17)}});
+  c.restore()}
+
+/* F · the tagline, and his yellow line going across the page */
+const F0=25.3;
+const TRAILF=resample(catmull([[-60,676],[380,628],[760,690],[1160,612],[1560,668],[1990,590]].map(([x,y])=>({x,y})),24),5);
+function shotF(c,t,v){const lt=t-F0;
+  const tp=eIO(seg(lt,.25,1.6)),fade=1-seg(t,27.4,28.0);
+  if(tp>0&&fade>0)crayonPass(c,g=>crayon(g,TRAILF,SUN,9,mulberry32(555+v*31),0,0,Math.max(2,Math.round(tp*TRAILF.length)),7000+v*17,fade));
+  const a=eOut(seg(lt,.5,1.2))*(1-seg(t,27.3,27.7));text(c,TAGLINE,COL(4),560-(1-eOut(seg(lt,.5,1.3)))*10,`400 50px ${LX}`,COBALT,{a,ls:3})}
+
+/* G · the end card: the title page of the notebook — 飞 assembling band by band, the dot turning to his yellow crayon, the cobalt block, the seal */
+const G0=27.5;
+const FEI={k:1.17,x:783.2,y:-117.6},BANDS=[70,185,300,415,530,645,760,875,990];
+const GLYPH=new Path2D('M40 80H705V220H40Z M555 80H705V470C705 640 760 760 850 790L930 615L985 600L995 880C995 930 960 955 900 955C720 955 555 820 555 520Z M937 117L1013 223L688 453L612 347Z');
+const DOTU=[[700,415],[990,520],[940,610],[700,500]],DOTC={x:832.5,y:511.25};
+const DOTP=DOTU.map(([x,y])=>({x:(x-DOTC.x)*FEI.k,y:(y-DOTC.y)*FEI.k})),DOT0={x:FEI.x+DOTC.x*FEI.k,y:FEI.y+DOTC.y*FEI.k};
+const DOTPATH=new Path2D('M'+DOTU.map(p=>p.join(' ')).join('L')+'Z');
+function screenClip(c){c.beginPath();c.rect(-2000,-300,5000,920);for(let y=620,i=0;y<1000;y+=22,i++)c.rect(-2000,y,5000,22*(1-i/18*.82))}
+const bandDX=(i,lt)=>{const st=.35+i*.05,u=seg(lt,st,st+.45);return u>=1?0:(i%2?-1:1)*1500*Math.pow(2,-10*u)};
+function glyph(c,lt,color,ox=0,oy=0){c.save();c.translate(FEI.x+ox,FEI.y+oy);c.scale(FEI.k,FEI.k);screenClip(c);c.clip();c.fillStyle=color;
+  if(lt>=1.2){c.fill(GLYPH);c.restore();return}
+  for(let i=0;i<8;i++){const dx=bandDX(i,lt)/FEI.k;if(Math.abs(dx)>2400)continue;c.save();c.beginPath();c.rect(-3000,BANDS[i],7000,BANDS[i+1]-BANDS[i]);c.clip();c.translate(dx,0);c.fill(GLYPH);c.restore()}
+  c.restore()}
+function drawDot(c,s,v){const fi=dotItems[0],li=dotItems[1];crayonPass(c,g=>{g.save();g.translate(DOT0.x,DOT0.y);g.scale(s,s);
+  g.save();pathPoly(g,fi.clip,0,0);g.clip();crayon(g,fi.pts,SUN,fi.w,mulberry32(fi.id*7919+v*104729+1),0,0,fi.pts.length,fi.id*131+v*17);g.restore();
+  crayon(g,li.pts,SUN_D,li.w,mulberry32(li.id*7919+v*104729+1),0,0,li.pts.length,li.id*131+v*17);g.restore()})}
+const SEAL_TXT='DREAM NOTES · 梦的笔记 · 飞 / FLY · VOL. 01 · 2026 · ';
+function seal(c,lt){const a=seg(lt,1.5,1.66);if(a<=0)return;const sc=lerp(1.25,1,eOut(seg(lt,1.5,1.66))),k=2.6*sc,cx=1600,cy=1060,rot=-.35+lt*.05;
+  c.save();c.globalAlpha=a;c.translate(cx,cy);c.rotate(rot);c.strokeStyle=COBALT;c.fillStyle=COBALT;
+  c.lineWidth=2*k;c.beginPath();c.arc(0,0,96*k,0,6.2832);c.stroke();c.lineWidth=1*k;c.beginPath();c.arc(0,0,60*k,0,6.2832);c.stroke();
+  c.font=`600 ${12.5*k}px ${UI}`;const chars=[...SEAL_TXT],ws=chars.map(ch=>c.measureText(ch).width),tot=ws.reduce((a,b)=>a+b,0),r=76*k,gap=(2*Math.PI*r-tot)/chars.length;
+  let s=0;chars.forEach((ch,i)=>{const ang=(s+ws[i]/2)/r-Math.PI/2;c.save();c.rotate(ang);c.translate(0,-r+4*k);c.textAlign='center';c.fillText(ch,0,0);c.restore();s+=ws[i]+gap});
+  c.rotate(-rot);c.font=`900 ${54*k}px ${CN}`;c.textAlign='center';c.fillText('飞',0,19*k);c.restore()}
+const ROWS=[['01','Windows / Android','Platform'],['02','试玩招募中','Playtest · Open'],['03','五章 · 两个结局','2 Endings']];
+function shotG(c,t,v){const lt=t-G0;
+  gridLines(c,.16,k=>eOut(seg(lt,k*.025,.6+k*.025)));
+  /* 错版: the yellow plate slips as the bands lock (once), then settles under the cobalt */
+  const mis=lt>=.98&&lt<1.08;
+  if(mis){c.save();c.globalCompositeOperation='multiply';glyph(c,9,'rgba(242,181,31,.95)',7,2);c.restore()}
+  glyph(c,lt,COBALT);
+  /* the dot: cobalt on the glyph, flickers, and becomes his yellow crayon */
+  const fl=lt>=1.12&&lt<1.5?[1,0,1,1,0,0,1,0,1,1][Math.floor((lt-1.12)*24)%10]:lt<1.12?0:1;
+  if(lt>=.6){if(!fl){c.save();c.translate(FEI.x,FEI.y);c.scale(FEI.k,FEI.k);c.fillStyle=COBALT;c.globalAlpha=seg(lt,.6,.8);c.fill(DOTPATH);c.restore()}
+    else drawDot(c,1+.08*(1-seg(lt,1.5,1.8)),v)}
+  /* the title block, top left */
+  const ta=k=>eOut(seg(lt,.5+k*.12,.95+k*.12)),ty=k=>(1-ta(k))*8;
+  cap(c,'N°00',120,92+ty(0),COBALT,{a:ta(0)});cap(c,'飞 / Fly · 标题 · Title',522,92+ty(0),COBALT,{a:ta(0),align:'right'});
+  c.save();c.globalAlpha=ta(0);c.fillStyle=COBALT;c.fillRect(120,104+ty(0),402*ta(0),1);c.restore();
+  text(c,'飞',120,224+ty(1),`900 92px ${CN}`,COBALT,{a:ta(1)});text(c,'Fly',236,224+ty(1),`500 98px ${DISP}`,COBALT,{a:ta(1),ls:-3.4});
+  text(c,'一部视觉小说',120,282+ty(2),`500 28px ${CN}`,COBALT,{a:ta(2),ls:2});cap(c,'A Visual Novel',120,308+ty(2),COBALT,{a:ta(2)*.8,size:13});
+  c.save();c.globalAlpha=ta(3)*.4;c.fillStyle=COBALT;c.fillRect(120,336,402*ta(3),1);c.restore();
+  text(c,'关于一个想飞的孩子，',120,378+ty(3),`400 22px ${LX}`,COBALT,{a:ta(3),ls:1});text(c,'和他醒来以后的事。',120,412+ty(3),`400 22px ${LX}`,COBALT,{a:ta(3),ls:1});
+  text(c,'About a child who wanted to fly, and what came after he woke.',120,442+ty(3),`400 13px ${UI}`,COBALT,{a:ta(3)*.75});
+  /* the cobalt block rising from the bottom edge, its rows in paper; 试玩招募中 is knocked out, like a selected menu line */
+  const bh=eOut(seg(lt,.8,1.25));if(bh>0){c.fillStyle=COBALT;c.fillRect(0,1080-488*bh,546,488*bh)}
+  ROWS.forEach(([n,zh,en],i)=>{const a=eOut(seg(lt,1.1+i*.1,1.45+i*.1)),y=616+i*56;if(a<=0)return;
+    c.save();c.globalAlpha=.35*a;c.fillStyle=PAPER;c.fillRect(120,y,402*a,1);c.restore();
+    const inv=i===1?eOut(seg(lt,1.5,1.7)):0;
+    const row=(col,dot)=>{cap(c,n,132,y+33,col,{a});text(c,zh,180,y+37,`500 24px ${CN}`,col,{a,ls:1});
+      if(dot){c.save();c.font=`500 24px ${CN}`;c.letterSpacing='1px';const w=c.measureText(zh).width;c.fillStyle=SUN;c.globalAlpha=a;c.beginPath();c.arc(180+w+14,y+29,5,0,6.2832);c.fill();c.restore()}
+      cap(c,en,508,y+33,col,{a,size:11,align:'right'})};
+    row(PAPER,false);
+    if(inv>0){c.save();c.beginPath();c.rect(120,y+1,402*inv,55);c.clip();c.fillStyle=PAPER;c.fillRect(120,y+1,402,55);row(COBALT,true);c.restore()}});
+  {const a=eOut(seg(lt,1.4,1.75));if(a>0){c.save();c.globalAlpha=.35*a;c.fillStyle=PAPER;c.fillRect(120,616+3*56,402,1);c.restore()}
+    cap(c,'Endnd × Claude Opus 5.5 — 2026.10',120,980,PAPER,{a:a*.85});cap(c,'v0.1 · 小范围试玩 · 人物立绘将在之后的版本加入',120,1006,PAPER,{a:a*.65,size:11})}
+  flightLog(c,lt);
+  seal(c,lt);
+  return mis}
+/* his flight log, with dotted leaders, as on the title page */
+const LOG=[['起点','From','屋顶'],['终点','To','最高的地方'],['高度','Alt.','384 400 km'],['距离','Dist.','未知'],['记忆','Memory','碎片']];
+function flightLog(c,lt){const x=760,w=330,y0=176,a0=eOut(seg(lt,1.25,1.6));if(a0<=0)return;
+  cap(c,'飞行记录 · Flight Log',x,y0+12,COBALT,{a:a0});cap(c,'002',x+w,y0+12,COBALT,{a:a0,align:'right'});c.save();c.globalAlpha=a0;c.fillStyle=COBALT;c.fillRect(x,y0+21,w*a0,1);c.restore();
+  LOG.forEach(([k,e,val],i)=>{const a=eOut(seg(lt,1.32+i*.07,1.62+i*.07));if(a<=0)return;const y=y0+44+i*24;
+    text(c,k,x,y,`400 12px ${CN}`,COBALT,{a,ls:.3});c.save();c.font=`400 12px ${CN}`;c.letterSpacing='.3px';const kw=c.measureText(k).width;c.restore();
+    const e2=' · '+e.toUpperCase();cap(c,e2,x+kw,y,COBALT,{a});c.save();c.font=`400 12px ${UI}`;c.letterSpacing='1.08px';const ew=c.measureText(e2).width;
+    c.font=`400 12px ${/[一-鿿]/.test(val)?CN:UI}`;c.letterSpacing='.7px';const vw=c.measureText(val).width;c.restore();
+    text(c,val,x+w,y,`400 12px ${/[一-鿿]/.test(val)?CN:UI}`,COBALT,{a,ls:.7,align:'right'});
+    c.save();c.globalAlpha=a*.6;c.fillStyle=COBALT;for(let lx=x+kw+ew+8;lx<x+w-vw-8;lx+=4)c.fillRect(lx,y-4,1,1);c.restore()})}
+
+/* ============================== chrome: the corners, the slips ============================== */
+const LABELS=[[2.6,16.95,'N°02 · 第二章 · 最高的地方','011'],[16.95,21.3,'N°04 · 第四章 · 鸟群','031'],[21.3,24.95,'N°05 · 第五章 · 十一月','041']];
+function darkAt(t){return clamp(Math.min(seg(t,9.6,10.4),1-seg(t,16.6,17.0)))}
+function chrome(c,t){const dk=darkAt(t),col=dk>.5?PAPER:COBALT,halo=dk>.5?'rgba(8,10,28,.85)':'rgba(242,236,223,.9)';
+  const top=seg(t,2.9,3.4)*(1-seg(t,27.3,27.7));
+  cap(c,'飞 / Fly · PV 01',120,44,col,{a:top,halo});
+  for(const [a,b,l,pg] of LABELS){const al=seg(t,a+.3,a+.7)*(1-seg(t,b-.2,b+.1));if(al<=0)continue;cap(c,l,1800,44,col,{a:al,align:'right',halo});cap(c,pg,1800,1044,col,{a:al*.8,align:'right',halo})}}
+function slip(c,t,cp){if(t<cp.t0||t>cp.t1)return;const lt=t-cp.t0,out=1-seg(t,cp.t1-.45,cp.t1),open=eOut(seg(lt,0,.4));
+  const x=546,y=872,w=828,h=112,cut=28;c.save();c.globalAlpha=out;
+  const poly=(dx,dy)=>{c.beginPath();c.moveTo(x+dx,y+dy);c.lineTo(x+dx+w-cut,y+dy);c.lineTo(x+dx+w,y+dy+cut);c.lineTo(x+dx+w,y+dy+h);c.lineTo(x+dx,y+dy+h);c.closePath()};
+  c.save();c.beginPath();c.rect(x,y-60,(w+20)*open,h+80);c.clip();
+  poly(10,10);c.fillStyle='rgba(0,71,171,.16)';c.fill();poly(0,0);c.fillStyle=PAPER;c.fill();
+  c.fillStyle='rgba(0,71,171,.55)';for(let k=0;k<=w-cut;k+=142)c.fillRect(x+k,y,1,7);c.fillStyle='rgba(0,71,171,.3)';for(let k=0;k<=w-cut;k+=8)c.fillRect(x+k,y,1,4);
+  c.restore();
+  /* the name tab: which chapter this line is from */
+  const ta=seg(lt,.15,.45);if(ta>0){c.save();c.globalAlpha=out*ta;c.font=`500 17px ${CN}`;c.letterSpacing='1px';const tw=c.measureText(cp.tab).width+18+34;
+    c.beginPath();c.moveTo(x,y-40);c.lineTo(x+tw,y-40);c.lineTo(x+tw-16,y);c.lineTo(x,y);c.closePath();c.fillStyle=COBALT;c.fill();c.fillStyle=PAPER;c.fillText(cp.tab,x+18,y-13);c.restore()}
+  cap(c,'旁白 · Narration',x+w-24,y+h-14,COBALT,{a:.55*seg(lt,.3,.6),size:10,align:'right'});
+  /* typed in, letter by letter */
+  c.font=`400 32px ${LX}`;c.letterSpacing='1px';c.fillStyle=COBALT;let px=x+32;const chars=[...cp.s];
+  chars.forEach((ch,k)=>{const a=clamp((lt-.32-k/16)/.08);const wch=c.measureText(ch).width;if(a>0){c.globalAlpha=out*a;c.fillText(ch,px,y+68)}px+=wch});
+  c.restore()}
+
+/* ============================== the cut ============================== */
+function render(t){
+  t=clamp(t,0,DUR);reset(X);
+  if(!ready){paper(X);return}
+  const v=((Math.floor(t*12)%3)+3)%3;let mis=false;
+  if(t<25.55){
+    if(t<B0)shotA(X,t);
+    else if(t<C0)shotB(X,t,v);
+    else if(t<C0+.5){shotB(X,t,v);reset(TX);TX.clearRect(0,0,W,H);shotC1(TX,t,v);X.globalAlpha=eIO(seg(t,C0,C0+.5));X.drawImage(tmp,0,0);X.globalAlpha=1}
+    else if(t<C2)shotC1(X,t,v);
+    else if(t<C2+.7){shotC1(X,t,v);reset(TX);shotC2(TX,t,v);X.globalAlpha=eIO(seg(t,C2,C2+.7));X.drawImage(tmp,0,0);X.globalAlpha=1}
+    else if(t<D0)shotC2(X,t,v);
+    else if(t<E0)shotD(X,t,v);
+    else if(t<E0+1.3){shotD(X,t,v);reset(TX);shotE(TX,t,v);bleed(TX,seg(t,E0,E0+1.3),'in',1180,620);X.drawImage(tmp,0,0)}
+    else shotE(X,t,v);
+    reset(X);
+    /* A bleeds away into B */
+    if(t>=B0&&t<B0+1.3){reset(TX);shotA(TX,t);bleed(TX,seg(t,B0,B0+1.3),'out',960,560);X.drawImage(tmp,0,0)}
+    altimeter(X,t,darkAt(t));
+    for(const cp of CAPS)slip(X,t,cp);
+    /* T3 in cobalt between the earth and the dream; T3 in paper to close the pictures */
+    if(t>=16.25&&t<17.65){const ms=(t-16.25)*1000,cover=ms<780;colStrips(X,cover?ms:ms-780,cover,COBALT);
+      if(t>=16.95&&t<17.15)cap(X,'N°04 · 第四章 · 鸟群 · The Flock',120,1044,PAPER)}
+    if(t>=24.75)colStrips(X,(t-24.75)*1000,true,PAPER);
+  }else paper(X);
+  if(t>=25.55){reset(X);gridLines(X,.09*(1-seg(t,G0,G0+.4)));shotF(X,t,v);if(t>=G0)mis=shotG(X,t,v)}
+  reset(X);
+  chrome(X,t);
+  regMarks(X,t<B0?.45:.55,mis);
+  X.globalCompositeOperation='multiply';X.globalAlpha=.5;X.drawImage(grainC,0,0);reset(X);
+}
+
+/* ============================== sound: synthesised offline into one deterministic track ============================== */
+const AU={buf:null,ctx:null,src:null,gain:null,muted:false};
+const CUES=[[.2,'tap'],[2.6,'bleed'],[3.0,'roll'],[6.45,'lift'],[8.3,'swoosh'],[8.6,'cloud'],[9.4,'cloud'],[10.1,'chime'],[10.8,'whisper'],
+  [11.7,'shimmer'],[12.48,'bloom'],[13.6,'moon'],[15.2,'shimmer'],[16.25,'drop'],[16.95,'paper'],[17.5,'flock'],[18.0,'passby'],[19.6,'flock'],
+  [21.3,'bleed'],[22.0,'rustle'],[24.75,'drop'],[27.85,'whoosh'],[27.95,'whoosh'],[28.05,'whoosh'],[28.48,'reg'],[28.3,'slide'],[28.62,'flick'],[28.7,'flick'],[28.8,'flick'],
+  [28.6,'tick'],[28.7,'tick'],[28.8,'tick'],[29.0,'stamp']];
+async function buildAudio(){
+  const sr=44100,oc=new OfflineAudioContext(2,Math.ceil(sr*DUR),sr),rr=mulberry32(4242);
+  const gn=(v,to)=>{const n=oc.createGain();n.gain.value=v;n.connect(to);return n};
+  const master=gn(1,oc.destination);
+  const rev=oc.createConvolver();{const n=Math.floor(sr*3.4),b=oc.createBuffer(2,n,sr);for(let ch=0;ch<2;ch++){const d=b.getChannelData(ch);let lp=0;for(let i=0;i<n;i++){lp=lp*.6+(rr()*2-1)*.4;d[i]=lp*Math.pow(1-i/n,2.6)}}rev.buffer=b}
+  const wet=gn(.5,master);rev.connect(wet);
+  const mus=gn(.62,master),musS=gn(1,rev);const musIn=oc.createGain();musIn.connect(mus);musIn.connect(musS);
+  const sfxB=gn(.6,master),sfxS=gn(.12,rev);sfxB.connect(sfxS);
+  const amb=gn(1,master);
+  const nb=oc.createBuffer(1,sr*3,sr);{const d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=rr()*2-1}
+  const env=(g,t0,a,peak,dec)=>{g.gain.setValueAtTime(.0001,t0);g.gain.exponentialRampToValueAtTime(Math.max(peak,.0002),t0+a);g.gain.exponentialRampToValueAtTime(.0001,t0+a+dec)};
+  const tone=(f,dur,{type='sine',g=.2,t=0,to=sfxB,f2}={})=>{const o=oc.createOscillator(),n=oc.createGain();o.type=type;o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+dur);o.connect(n);n.connect(to);env(n,t,.004,g,dur);o.start(t);o.stop(t+dur+.05)};
+  const hiss=(dur,{type='bandpass',f=2000,f2,q=1,g=.15,t=0,a=.004,to=sfxB}={})=>{const s=oc.createBufferSource(),fl=oc.createBiquadFilter(),n=oc.createGain();s.buffer=nb;s.loop=true;fl.type=type;fl.frequency.setValueAtTime(f,t);if(f2)fl.frequency.exponentialRampToValueAtTime(f2,t+dur);fl.Q.value=q;
+    s.connect(fl);fl.connect(n);n.connect(to);env(n,t,a,g,dur);s.start(t,rr()*1.5);s.stop(t+a+dur+.05)};
+  const bell=(f,g,t,to=sfxB)=>[[1,1],[2.76,.3],[5.4,.1]].forEach(([m,a])=>tone(f*m,1.7/m,{g:g*a,t,to}));
+  const FX={
+    tap:t=>tone(2200,.03,{g:.035,t}),
+    bleed:t=>hiss(1.1,{type:'lowpass',f:180,f2:900,q:.4,g:.09,a:.35,t}),
+    roll:t=>hiss(3.2,{type:'lowpass',f:180,f2:620,q:.5,g:.07,a:1.2,t}),
+    lift:t=>{tone(330,1.2,{g:.05,f2:540,t});hiss(1.1,{f:700,f2:2400,q:.6,g:.06,a:.4,t})},
+    swoosh:t=>hiss(1,{f:380,f2:1700,q:.6,g:.07,a:.4,t}),
+    cloud:t=>hiss(1.7,{type:'lowpass',f:260,f2:1300,q:.3,g:.1,a:.65,t}),
+    chime:t=>{bell(1318.5,.035,t);bell(1760,.03,t+.18);bell(2349.3,.025,t+.36)},
+    whisper:t=>hiss(.7,{f:1200,f2:700,q:.5,g:.03,a:.28,t}),
+    shimmer:t=>{for(let k=0;k<6;k++)bell(1800+rr()*2200,.012,t+k*.1)},
+    bloom:t=>{hiss(2.4,{f:600,f2:3000,q:.4,g:.05,a:1.5,t});tone(220,2.6,{g:.04,f2:330,t})},
+    moon:t=>{bell(587.33,.05,t);bell(880,.04,t+.3);bell(1174.7,.03,t+.6)},
+    drop:t=>{for(let k=0;k<3;k++)hiss(.08,{type:'lowpass',f:340,g:.16,t:t+k*.06})},
+    paper:t=>hiss(.16,{f:1300,f2:2400,q:.8,g:.08,a:.02,t}),
+    flock:t=>{for(let k=0;k<9;k++)tone(2300+rr()*1300,.07,{g:.028,f2:3300,t:t+k*.13+rr()*.05});hiss(.6,{f:700,q:.4,g:.03,a:.15,t})},
+    passby:t=>hiss(2.8,{f:300,f2:2600,q:.8,g:.06,a:1.3,t}),
+    rustle:t=>{for(let k=0;k<4;k++)hiss(.08,{f:1400+k*280,q:1.5,g:.04,t:t+k*.11})},
+    whoosh:t=>hiss(.26,{f:500,f2:2800,q:1.3,g:.1,a:.03,t}),
+    reg:t=>tone(1400,.04,{type:'triangle',g:.045,t}),
+    slide:t=>hiss(.34,{type:'lowpass',f:500,f2:2600,q:.5,g:.09,a:.08,t}),
+    flick:t=>hiss(.05,{type:'highpass',f:3200,g:.07,t}),
+    tick:t=>tone(2200,.03,{g:.045,t}),
+    stamp:t=>{tone(150,.16,{g:.4,f2:48,t});hiss(.05,{type:'lowpass',f:1200,g:.13,t})},
+    yard:(t,i)=>{tone(520*Math.pow(1.09,i),.07,{type:'triangle',g:.11,t});hiss(.02,{type:'highpass',f:3000,g:.04,t})},
+    pencil:t=>hiss(.026+rr()*.02,{f:2300+rr()*1700,q:1.3,g:.012+rr()*.014,a:.003,t}),
+  };
+  for(const [t,n] of CUES)FX[n](t);
+  /* the yard counter ticks, as it counts down */
+  {let prev=9,i=0;for(let lt=0;lt<LIFT;lt+=.005){const y=yardAt(lt);if(y!==prev){FX.yard(B0+lt,i++);prev=y}}}
+  /* a pencil grain for every letter of every caption, as in the game */
+  for(const cp of CAPS)[...cp.s].forEach((_,k)=>FX.pencil(cp.t0+.32+k/16));
+  /* his crayon going across the page under the tagline */
+  {const t0=F0+.25,dur=1.35,s=oc.createBufferSource(),fl=oc.createBiquadFilter(),g=oc.createGain();s.buffer=nb;s.loop=true;fl.type='bandpass';fl.frequency.value=3200;fl.Q.value=.6;s.connect(fl);fl.connect(g);g.connect(sfxB);
+    g.gain.setValueAtTime(0,t0);for(let k=0;k<dur;k+=.045)g.gain.setValueAtTime(.012+rr()*.045,t0+k);g.gain.setValueAtTime(0,t0+dur);s.start(t0);s.stop(t0+dur+.1)}
+  /* the air: wind on the slope, louder as he runs; nothing at all up there; a little in the dream and in November */
+  {const s=oc.createBufferSource(),wf=oc.createBiquadFilter(),lfo=oc.createOscillator(),lg=oc.createGain(),g=gn(0,amb);s.buffer=nb;s.loop=true;wf.type='lowpass';wf.frequency.value=420;wf.Q.value=.3;lfo.frequency.value=.07;lg.gain.value=220;
+    lfo.connect(lg);lg.connect(wf.frequency);s.connect(wf);wf.connect(g);s.start(0);lfo.start(0);
+    [[0,0],[2.6,0],[3.6,.18],[6.4,.34],[8.6,.4],[10.4,.12],[11.6,0],[16.95,0],[17.6,.08],[21.3,.08],[22.3,.2],[24.75,.2],[25.6,.02],[27.5,0]].forEach(([t,v])=>g.gain.linearRampToValueAtTime(v,t))}
+  /* birds over the slope */
+  for(let k=0;k<7;k++){const t=3.2+rr()*3;tone(2600,.09,{g:.04,f2:3400,t,to:amb});tone(2900,.07,{g:.03,f2:3600,t:t+.12,to:amb})}
+  /* the glider's fan while he runs and climbs */
+  {const o=oc.createOscillator(),lp=oc.createBiquadFilter(),g=gn(0,amb),trem=oc.createGain(),lfo=oc.createOscillator(),lg=oc.createGain();o.type='sawtooth';o.frequency.value=62;lp.type='lowpass';lp.frequency.value=420;lfo.frequency.value=18;trem.gain.value=.6;lg.gain.value=.4;
+    lfo.connect(lg);lg.connect(trem.gain);o.connect(lp);lp.connect(trem);trem.connect(g);o.start(0);lfo.start(0);g.gain.setValueAtTime(0,0);g.gain.linearRampToValueAtTime(0,2.8);g.gain.linearRampToValueAtTime(.028,3.6);g.gain.linearRampToValueAtTime(.028,8.4);g.gain.linearRampToValueAtTime(0,10.2)}
+  /* music: the game's music-box lullaby (MEL, D major pentatonic, .34 s a step) over the title's pads — D · G · Bm · A, then G → D for the end card */
+  const CH=[[2.6,'D3 A3 E4 F#4'],[8.44,'G2 D3 B3 F#4'],[13.88,'B2 F#3 A3 D4'],[19.32,'A2 E3 A3 C#4'],[24.76,'G2 D3 B3 F#4'],[27.5,'D3 A3 D4 F#4 A4']];
+  const lp=oc.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1500;lp.Q.value=.6;const padG=oc.createGain();padG.gain.value=1;lp.connect(padG);padG.connect(musIn);
+  {const lfo=oc.createOscillator(),lg=oc.createGain();lfo.frequency.value=.09;lg.gain.value=330;lfo.connect(lg);lg.connect(lp.frequency);lfo.start(0)}
+  /* (the pad thins out in the black, where the game has no wind and almost no music) */
+  [[0,1],[11.6,1],[12.6,.55],[16.4,.55],[17.2,1]].forEach(([t,v])=>padG.gain.linearRampToValueAtTime(v,t));
+  CH.forEach(([t0,ch],i)=>{const t1=i<CH.length-1?CH[i+1][0]:DUR-1.2,att=i?1.6:2.4,rel=i<CH.length-1?2.6:1.1;
+    for(const n of ch.split(' ')){const f=HZ(NOTE(n));for(const dt of [-7,7]){const o=oc.createOscillator(),g=oc.createGain();o.type='triangle';o.frequency.value=f;o.detune.value=dt;
+      g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(.05,t0+att);g.gain.setValueAtTime(.05,t1);g.gain.linearRampToValueAtTime(0,t1+rel);o.connect(g);g.connect(lp);o.start(t0);o.stop(t1+rel+.05)}
+      const o=oc.createOscillator(),g=oc.createGain();o.frequency.value=f*2;g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(.008,t0+att*1.6);g.gain.setValueAtTime(.008,t1);g.gain.linearRampToValueAtTime(0,t1+rel);o.connect(g);g.connect(musIn);o.start(t0);o.stop(t1+rel+.05)}
+    const root=HZ(NOTE(ch.split(' ')[0]))/2,o=oc.createOscillator(),g=oc.createGain();o.frequency.value=root;g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(.07,t0+.3);g.gain.setValueAtTime(.07,t1-.2);g.gain.linearRampToValueAtTime(0,t1+.8);o.connect(g);g.connect(musIn);o.start(t0);o.stop(t1+.9)});
+  const box=(n,t,g=.11)=>[[1,1],[2.76,.3],[5.4,.1]].forEach(([m,a])=>{const f=293.66*Math.pow(2,n/12)*m,o=oc.createOscillator(),gg=oc.createGain();o.frequency.value=f;gg.gain.setValueAtTime(.0001,t);gg.gain.exponentialRampToValueAtTime(g*a,t+.004);gg.gain.exponentialRampToValueAtTime(.0001,t+1.7/m);o.connect(gg);gg.connect(musIn);o.start(t);o.stop(t+1.8/m)});
+  const M0=3.0;for(const [k,n] of MEL){const t=M0+k*.34;if(t<DUR)box(n,t,(t>11.8&&t<16.6)?.07:.11)}
+  /* the end card: the opening of the tune again, landing on D with the seal */
+  [[27.9,19],[28.24,16],[28.58,14],[29.0,12],[29.0,0],[29.0,7]].forEach(([t,n],i)=>box(n,t,i>=4?.07:.1));
+  /* render, then bring the peak to −1 dB */
+  const buf=await oc.startRendering();let pk=0;for(let ch=0;ch<2;ch++){const d=buf.getChannelData(ch);for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>pk)pk=a}}
+  const k=.89/Math.max(1e-6,pk);for(let ch=0;ch<2;ch++){const d=buf.getChannelData(ch);for(let i=0;i<d.length;i++)d[i]*=k}
+  /* a short fade at the very end so the last frame never clicks */
+  {const n=Math.floor(sr*.25);for(let ch=0;ch<2;ch++){const d=buf.getChannelData(ch);for(let i=0;i<n;i++)d[d.length-1-i]*=i/n}}
+  return buf}
+
+/* ============================== the clock ============================== */
+let t=0,playing=false,clk0=0,t0=0,started=false,hudForced=false;
+const hud=document.getElementById('hud');
+/* the clock: performance time until the audio is really running, then the audio's own clock, so picture and sound never drift */
+const now=()=>AU.clock==='audio'?AU.ctx.currentTime:performance.now()/1000;
+function startAudio(at){stopAudio();if(!AU.ctx||!AU.buf||at>=DUR)return;const s=AU.ctx.createBufferSource();s.buffer=AU.buf;s.connect(AU.gain);s.start(0,at);AU.src=s}
+function stopAudio(){if(AU.src){try{AU.src.stop()}catch(e){}AU.src.disconnect();AU.src=null}}
+function syncAudio(){if(!playing||!AU.ctx||AU.ctx.state!=='running'||!AU.buf)return;const cur=clamp(t0+(now()-clk0),0,DUR);AU.clock='audio';t0=cur;clk0=AU.ctx.currentTime;startAudio(cur)}
+function play(){if(!ready||playing)return;if(t>=DUR)t=0;
+  if(!AU.ctx){try{AU.ctx=new AudioContext();AU.gain=AU.ctx.createGain();AU.gain.gain.value=AU.muted?0:1;AU.gain.connect(AU.ctx.destination)}catch(e){AU.ctx=null}}
+  playing=true;started=true;AU.clock='perf';clk0=now();t0=t;
+  if(AU.ctx){if(AU.ctx.state==='running')syncAudio();else AU.ctx.resume().then(syncAudio).catch(()=>{})}
+  updHud();requestAnimationFrame(loop)}
+function pause(){if(!playing)return;t=clamp(t0+(now()-clk0),0,DUR);playing=false;stopAudio();render(t);updHud()}
+function seek(x){t=clamp(+x||0,0,DUR);if(playing){clk0=now();t0=t;if(AU.clock==='audio')startAudio(t)}render(t);updHud();return t}
+function loop(){if(!playing)return;t=t0+(now()-clk0);if(t>=DUR){t=DUR;playing=false;stopAudio();render(t);updHud();return}render(t);requestAnimationFrame(loop)}
+function updHud(){const show=hudForced||(!started&&!playing);hud.hidden=!show;if(!show)return;
+  hud.textContent=!ready?hud.textContent:`飞 Fly · PV 01 — ${t.toFixed(2)} / ${DUR.toFixed(1)} s${AU.buf?'':' · 音轨生成中'}\n空格 播放/暂停 · ← → 逐帧 (Shift 1 s) · 0 回到开头 · M 静音${AU.muted?'（已静音）':''} · W 导出音轨 · H 隐藏提示`}
+function fit(){const c=document.getElementById('pv'),s=Math.min(innerWidth/W,innerHeight/H);c.style.transform=`translate(${(innerWidth-W*s)/2}px,${(innerHeight-H*s)/2}px) scale(${s})`}
+addEventListener('resize',fit);fit();
+function saveWav(){if(!AU.buf)return;const a=document.createElement('a');a.href=URL.createObjectURL(wavOf(AU.buf));a.download='fly_pv01_audio.wav';document.body.appendChild(a);a.click();a.remove()}
+addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();playing?pause():play()}
+  else if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();if(playing)pause();seek(t+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?1:1/60))}
+  else if(e.key==='0'||e.key==='Home'){seek(0)}
+  else if(e.key==='m'||e.key==='M'){AU.muted=!AU.muted;if(AU.gain)AU.gain.gain.value=AU.muted?0:1;updHud()}
+  else if(e.key==='w'||e.key==='W'){saveWav()}
+  else if(e.key==='h'||e.key==='H'){hudForced=!hudForced;if(!hudForced)started=true;updHud()}
+});
+
+/* ============================== build ============================== */
+const pvReady=(async()=>{
+  const setHud=s=>{hud.textContent=s};
+  const allTxt=DISCLOSURE+TAGLINE+CAPS.map(c=>c.s+c.tab).join('')+'飞一部视觉小说关于一个想飞的孩子，和他醒来以后的事。试玩招募中五章·两个结局小范围人物立绘将在之后的版本加入标题旁白第二四五章最高的地方鸟群十一月码地面云层卡门线月球地月系的边缘梦的笔记 ·/—×（），。';
+  setHud('载入字体…');
+  await Promise.race([Promise.all([
+    document.fonts.load(`400 26px "Noto Sans SC"`,allTxt),document.fonts.load(`500 26px "Noto Sans SC"`,allTxt),document.fonts.load(`900 92px "Noto Sans SC"`,'飞'),
+    document.fonts.load(`400 32px "LXGW WenKai"`,allTxt),document.fonts.load(`40px "ZCOOL KuaiLe"`,'我月亮妈妈祖父地球月球小行星带滑翔机最高的地方'),
+    document.fonts.load(`400 12px Inter`,'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789·/'),document.fonts.load(`500 12px Inter`,'0123456789 kmM'),document.fonts.load(`600 12px Inter`,'DREAMNOTESFLYVOL0126'),document.fonts.load(`500 98px "Inter Tight"`,'Fly0123456789'),
+  ]).catch(()=>{}),wait(9000)]);
+  setHud('绘制纸张与蜡笔…');await nf();
+  toothC=makeTooth();cpat=cctx.createPattern(toothC,'repeat');
+  {const x=grainC.getContext('2d'),id=x.createImageData(W,H),d=id.data,r=mulberry32(3);
+    for(let i=0;i<d.length;i+=4){const n=r(),v=255-n*n*26;d[i]=v;d[i+1]=v-2;d[i+2]=v-6;d[i+3]=255}x.putImageData(id,0,0);
+    x.globalAlpha=.05;x.strokeStyle='#7d6c52';x.lineWidth=.6;for(let k=0;k<1100;k++){const sx=r()*W,sy=r()*H,a=r()*6.28,l=8+r()*30;x.beginPath();x.moveTo(sx,sy);x.quadraticCurveTo(sx+Math.cos(a)*l*.5+(r()-.5)*6,sy+Math.sin(a)*l*.5+(r()-.5)*6,sx+Math.cos(a)*l,sy+Math.sin(a)*l);x.stroke()}}
+  seed(41);F(dotItems,DOTP,.35,13,SUN,14);S(dotItems,densify(DOTP,8,true),SUN_D,12);
+  seed(21);{const base=deform(ellipsePoly(0,0,1,1,18,1),2,.35);for(let i=0;i<30;i++)bleedLayers.push(deform(base,3,.3))}
+  setHud('绘制背景（草坡、天空、地球、梦）… 约需 10–20 秒');await nf();
+  await buildBGs();
+  /* warm the lazy caches so the first played frames don't hitch */
+  for(let v=0;v<3;v++)starLayer(v);
+  ready=true;
+  const q=new URLSearchParams(location.search),qt=parseFloat(q.get('t'));
+  render(t=isFinite(qt)?clamp(qt,0,DUR):0);if(isFinite(qt))started=true;
+  if(q.get('hud')==='0'){started=true}
+  updHud();
+  try{AU.buf=await buildAudio()}catch(e){console.warn('audio',e)}
+  syncAudio();
+  updHud();
+  return true})();
+window.pv={duration:DUR,seek,play,pause,get t(){return t},get playing(){return playing},ready:pvReady,render:x=>render(x),audioWav:()=>AU.buf&&wavOf(AU.buf),saveWav};
+render(0);
+</script>
+</body></html>
